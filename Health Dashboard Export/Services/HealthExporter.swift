@@ -473,45 +473,61 @@ class HealthExporter: ObservableObject {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        
+
         let jsonData = try encoder.encode(exportData)
-        
+
+        // Create filename
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let dateString = dateFormatter.string(from: Date())
+
+        let filename = isFullExport
+            ? "health-export-full-\(dateString).json"
+            : "health-export-delta-\(dateString).json"
+
         // Use custom save location if set, otherwise use default
-        let exportURL: URL
+        let fileURL: URL
         if let customLocation = saveLocationURL {
-            exportURL = customLocation
+            // User selected a specific folder - write directly to it
+            fileURL = customLocation.appendingPathComponent(filename)
             print("✓ Using custom save location: \(customLocation.path)")
+
+            // Access the security-scoped resource
+            let accessing = customLocation.startAccessingSecurityScopedResource()
+            defer {
+                if accessing {
+                    customLocation.stopAccessingSecurityScopedResource()
+                }
+            }
+
+            // Write file
+            try jsonData.write(to: fileURL)
         } else if let iCloudURL = FileManager.default.url(forUbiquityContainerIdentifier: nil)?
             .appendingPathComponent("Documents")
             .appendingPathComponent("HealthExport") {
-            exportURL = iCloudURL
+            // Create directory if needed for iCloud default location
+            try? FileManager.default.createDirectory(at: iCloudURL, withIntermediateDirectories: true)
+            fileURL = iCloudURL.appendingPathComponent(filename)
             print("✓ Using iCloud Drive storage")
+
+            // Write file
+            try jsonData.write(to: fileURL)
         } else {
             // Fallback to local Documents directory
             guard let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
                 throw HealthExportError.storageNotAvailable
             }
-            exportURL = documentsURL.appendingPathComponent("HealthExport")
+            let exportURL = documentsURL.appendingPathComponent("HealthExport")
+
+            // Create directory if needed
+            try? FileManager.default.createDirectory(at: exportURL, withIntermediateDirectories: true)
+            fileURL = exportURL.appendingPathComponent(filename)
             print("⚠️ Using local storage")
+
+            // Write file
+            try jsonData.write(to: fileURL)
         }
-        
-        // Create directory if needed
-        try? FileManager.default.createDirectory(at: exportURL, withIntermediateDirectories: true)
-        
-        // Create filename
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-        let dateString = dateFormatter.string(from: Date())
-        
-        let filename = isFullExport
-            ? "health-export-full-\(dateString).json"
-            : "health-export-delta-\(dateString).json"
-        
-        let fileURL = exportURL.appendingPathComponent(filename)
-        
-        // Write file
-        try jsonData.write(to: fileURL)
-        
+
         return fileURL
     }
 }

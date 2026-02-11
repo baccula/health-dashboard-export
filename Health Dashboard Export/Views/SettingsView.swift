@@ -7,13 +7,15 @@
 
 import SwiftUI
 import AppIntents
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @ObservedObject var exporter: HealthExporter
     @Environment(\.dismiss) private var dismiss
     @State private var showingClearDataAlert = false
     @State private var showingShortcutsGuide = false
-    
+    @State private var showingLocationPicker = false
+
     var body: some View {
         NavigationStack {
             List {
@@ -24,14 +26,14 @@ struct SettingsView: View {
                         Text(exporter.lastSyncDate?.formatted(date: .abbreviated, time: .shortened) ?? "Never")
                             .foregroundColor(.secondary)
                     }
-                    
+
                     HStack {
                         Text("Total Records")
                         Spacer()
                         Text(formatNumber(exporter.totalRecords))
                             .foregroundColor(.secondary)
                     }
-                    
+
                     if let fileURL = exporter.lastExportedFileURL {
                         HStack {
                             Text("Last Export File")
@@ -42,18 +44,29 @@ struct SettingsView: View {
                                 .lineLimit(1)
                         }
                     }
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Save Location")
-                        Text(getSaveLocationDescription())
-                            .foregroundColor(.secondary)
-                            .font(.caption)
-                            .lineLimit(2)
+
+                    Button(action: {
+                        showingLocationPicker = true
+                    }) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Save Location")
+                                    .foregroundColor(.primary)
+                                Text(getSaveLocationDescription())
+                                    .foregroundColor(.secondary)
+                                    .font(.caption)
+                                    .lineLimit(2)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                        }
                     }
                 } header: {
                     Text("Export Status")
                 }
-                
+
                 Section {
                     NavigationLink(destination: ScheduleManagerView()) {
                         HStack {
@@ -61,21 +74,21 @@ struct SettingsView: View {
                             Text("Scheduled Syncs")
                         }
                     }
-                    
+
                     NavigationLink(destination: ShortcutsGuideView()) {
                         HStack {
                             Image(systemName: "link.badge.plus")
                             Text("Shortcuts Guide")
                         }
                     }
-                    
+
                     AddToSiriButton(intent: SyncNowIntent()) {
                         HStack {
                             Image(systemName: "waveform.circle.fill")
                             Text("Add Sync to Siri")
                         }
                     }
-                    
+
                     AddToSiriButton(intent: FullExportIntent()) {
                         HStack {
                             Image(systemName: "waveform.circle.fill")
@@ -87,7 +100,7 @@ struct SettingsView: View {
                 } footer: {
                     Text("Add shortcuts to Siri for voice control, or use with the Shortcuts app for automation.")
                 }
-                
+
                 Section {
                     Button(role: .destructive, action: {
                         showingClearDataAlert = true
@@ -102,7 +115,7 @@ struct SettingsView: View {
                 } footer: {
                     Text("This will reset all sync history and remove cached export information. Your health data will not be affected.")
                 }
-                
+
                 Section {
                     HStack {
                         Text("Version")
@@ -132,15 +145,20 @@ struct SettingsView: View {
             } message: {
                 Text("This will reset your sync history and remove all cached export information. This cannot be undone.")
             }
+            .sheet(isPresented: $showingLocationPicker) {
+                DocumentPicker(onSelect: { url in
+                    exporter.setSaveLocation(url)
+                })
+            }
         }
     }
-    
+
     private func formatNumber(_ number: Int) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
         return formatter.string(from: NSNumber(value: number)) ?? "\(number)"
     }
-    
+
     private func getSaveLocationDescription() -> String {
         if let saveURL = exporter.saveLocationURL {
             let components = saveURL.pathComponents
