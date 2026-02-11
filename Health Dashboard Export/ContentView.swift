@@ -186,9 +186,6 @@ struct ContentView: View {
             Text(exporter.errorMessage ?? "An unknown error occurred")
         }
         .alert("Success", isPresented: $showingSuccess) {
-            Button("Share File") {
-                showingShareSheet = true
-            }
             Button("OK", role: .cancel) {}
         } message: {
             Text(successMessage)
@@ -311,48 +308,6 @@ struct ShareSheet: UIViewControllerRepresentable {
     }
     
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
-}
-
-// MARK: - Document Picker
-
-struct DocumentPicker: UIViewControllerRepresentable {
-    let onSelect: (URL) -> Void
-    
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onSelect: onSelect)
-    }
-    
-    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder])
-        picker.allowsMultipleSelection = false
-        picker.shouldShowFileExtensions = true
-        picker.delegate = context.coordinator
-        return picker
-    }
-    
-    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
-    
-    class Coordinator: NSObject, UIDocumentPickerDelegate {
-        let onSelect: (URL) -> Void
-        
-        init(onSelect: @escaping (URL) -> Void) {
-            self.onSelect = onSelect
-        }
-        
-        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-            guard let url = urls.first else { return }
-            
-            // Start accessing security-scoped resource
-            if url.startAccessingSecurityScopedResource() {
-                defer { url.stopAccessingSecurityScopedResource() }
-                onSelect(url)
-            }
-        }
-        
-        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-            controller.dismiss(animated: true)
-        }
-    }
 }
 
 #Preview {
