@@ -68,7 +68,7 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    NavigationLink(destination: ScheduleManagerView()) {
+                    NavigationLink(destination: ScheduleManagerView(exporter: exporter)) {
                         HStack {
                             Image(systemName: "calendar.badge.clock")
                             Text("Scheduled Syncs")

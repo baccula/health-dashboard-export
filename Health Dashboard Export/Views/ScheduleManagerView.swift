@@ -9,6 +9,7 @@ import SwiftUI
 
 struct ScheduleManagerView: View {
     @EnvironmentObject var scheduleManager: ScheduleManager
+    @ObservedObject var exporter: HealthExporter
     @State private var showingAddSchedule = false
     @State private var scheduleToEdit: SyncSchedule?
     
@@ -123,10 +124,10 @@ struct ScheduleManagerView: View {
             }
         }
         .sheet(isPresented: $showingAddSchedule) {
-            ScheduleEditorView(scheduleManager: scheduleManager)
+            ScheduleEditorView(scheduleManager: scheduleManager, exporter: exporter)
         }
         .sheet(item: $scheduleToEdit) { schedule in
-            ScheduleEditorView(scheduleManager: scheduleManager, scheduleToEdit: schedule)
+            ScheduleEditorView(scheduleManager: scheduleManager, exporter: exporter, scheduleToEdit: schedule)
         }
     }
 }
@@ -195,6 +196,7 @@ struct InfoRow: View {
 
 #Preview {
     NavigationView {
-        ScheduleManagerView()
+        ScheduleManagerView(exporter: HealthExporter())
+            .environmentObject(ScheduleManager())
     }
 }
