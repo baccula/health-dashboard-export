@@ -33,8 +33,12 @@ struct ScheduleManagerView: View {
                         Button(action: {
                             showingAddSchedule = true
                         }) {
-                            Label("Create Schedule", systemImage: "plus.circle.fill")
-                                .frame(maxWidth: .infinity)
+                            HStack {
+                                Spacer()
+                                Image(systemName: "plus.circle.fill")
+                                Text("Create Schedule")
+                                Spacer()
+                            }
                         }
                         .buttonStyle(.borderedProminent)
                     }
