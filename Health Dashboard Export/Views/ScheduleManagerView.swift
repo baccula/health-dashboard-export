@@ -34,6 +34,7 @@ struct ScheduleManagerView: View {
                             showingAddSchedule = true
                         }) {
                             Label("Create Schedule", systemImage: "plus.circle.fill")
+                                .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.borderedProminent)
                     }
