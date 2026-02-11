@@ -224,45 +224,76 @@ struct ContentView: View {
     }
     
     private func performSync() async {
-        pendingExportType = .incremental
-        showingLocationPicker = true
-    }
-    
-    private func performFullExport() async {
-        pendingExportType = .full
-        showingLocationPicker = true
-    }
-    
-    private func executeExport(at url: URL) async {
-        // Save the selected location
-        exporter.setSaveLocation(url)
-        
-        do {
-            switch pendingExportType {
-            case .incremental:
+        // Only prompt for location if one hasn't been set
+        if exporter.saveLocationURL == nil {
+            pendingExportType = .incremental
+            showingLocationPicker = true
+        } else {
+            // Location already set, proceed directly
+            do {
                 let recordsBefore = exporter.totalRecords
                 try await exporter.performIncrementalSync()
                 let newRecords = exporter.totalRecords - recordsBefore
-                
+
                 if newRecords > 0 {
                     successMessage = "Sync completed! \(formatNumber(newRecords)) new records exported."
                 } else {
                     successMessage = "Sync completed! No new data since last sync."
                 }
                 showingSuccess = true
-                
+            } catch {
+                print("Export error: \(error)")
+            }
+        }
+    }
+
+    private func performFullExport() async {
+        // Only prompt for location if one hasn't been set
+        if exporter.saveLocationURL == nil {
+            pendingExportType = .full
+            showingLocationPicker = true
+        } else {
+            // Location already set, proceed directly
+            do {
+                try await exporter.performFullExport()
+                successMessage = "Full export completed! \(formatNumber(exporter.totalRecords)) total records exported."
+                showingSuccess = true
+            } catch {
+                print("Export error: \(error)")
+            }
+        }
+    }
+
+    private func executeExport(at url: URL) async {
+        // Save the selected location
+        exporter.setSaveLocation(url)
+
+        do {
+            switch pendingExportType {
+            case .incremental:
+                let recordsBefore = exporter.totalRecords
+                try await exporter.performIncrementalSync()
+                let newRecords = exporter.totalRecords - recordsBefore
+
+                if newRecords > 0 {
+                    successMessage = "Sync completed! \(formatNumber(newRecords)) new records exported."
+                } else {
+                    successMessage = "Sync completed! No new data since last sync."
+                }
+                showingSuccess = true
+
             case .full:
                 try await exporter.performFullExport()
                 successMessage = "Full export completed! \(formatNumber(exporter.totalRecords)) total records exported."
                 showingSuccess = true
-                
+
             case .none:
                 break
             }
         } catch {
             print("Export error: \(error)")
         }
-        
+
         pendingExportType = nil
     }
     
