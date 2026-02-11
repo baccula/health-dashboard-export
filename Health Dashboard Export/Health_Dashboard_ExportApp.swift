@@ -11,11 +11,13 @@ import CoreData
 @main
 struct Health_Dashboard_ExportApp: App {
     let persistenceController = PersistenceController.shared
+    @StateObject private var scheduleManager = ScheduleManager()
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environment(\.managedObjectContext, persistenceController.container.viewContext)
+                .environmentObject(scheduleManager)
         }
     }
 }
