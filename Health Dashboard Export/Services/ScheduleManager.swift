@@ -20,6 +20,7 @@ class ScheduleManager: ObservableObject {
     init() {
         loadSchedules()
         registerBackgroundTasks()
+        updateOverdueSchedules()
         if !schedules.isEmpty {
             scheduleBackgroundTask()
         }
@@ -56,7 +57,7 @@ class ScheduleManager: ObservableObject {
     }
     
     // MARK: - Persistence
-    
+
     private func loadSchedules() {
         guard let data = userDefaults.data(forKey: schedulesKey),
               let decoded = try? JSONDecoder().decode([SyncSchedule].self, from: data) else {
@@ -65,10 +66,44 @@ class ScheduleManager: ObservableObject {
         }
         schedules = decoded
     }
-    
+
     private func saveSchedules() {
         guard let encoded = try? JSONEncoder().encode(schedules) else { return }
         userDefaults.set(encoded, forKey: schedulesKey)
+    }
+
+    /// Updates schedules whose nextRun time has passed without executing
+    /// This prevents the timer from counting up when app is reopened after scheduled time
+    private func updateOverdueSchedules() {
+        let now = Date()
+        var needsSave = false
+
+        for i in 0..<schedules.count {
+            guard schedules[i].isEnabled else { continue }
+            guard let nextRun = schedules[i].nextRun else { continue }
+
+            // If nextRun is in the past, advance it to the next occurrence
+            if nextRun < now {
+                print("⏩ Advancing overdue schedule '\(schedules[i].name)' from \(nextRun)")
+
+                // Keep advancing until we find a future time
+                var updatedNextRun = nextRun
+                while updatedNextRun < now {
+                    updatedNextRun = schedules[i].frequency.calculateNextRunAfter(
+                        date: updatedNextRun,
+                        at: schedules[i].time
+                    )
+                }
+
+                schedules[i].nextRun = updatedNextRun
+                needsSave = true
+                print("   ➡️ New nextRun: \(updatedNextRun)")
+            }
+        }
+
+        if needsSave {
+            saveSchedules()
+        }
     }
     
     // MARK: - Background Task Registration
