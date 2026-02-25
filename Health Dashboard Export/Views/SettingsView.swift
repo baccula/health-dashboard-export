@@ -14,7 +14,8 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showingClearDataAlert = false
     @State private var showingShortcutsGuide = false
-    @State private var showingLocationPicker = false
+    
+    private let apiClient = APIClient.shared
 
     var body: some View {
         NavigationStack {
@@ -33,38 +34,32 @@ struct SettingsView: View {
                         Text(formatNumber(exporter.totalRecords))
                             .foregroundColor(.secondary)
                     }
-
-                    if let fileURL = exporter.lastExportedFileURL {
-                        HStack {
-                            Text("Last Export File")
-                            Spacer()
-                            Text(fileURL.lastPathComponent)
-                                .foregroundColor(.secondary)
-                                .font(.caption)
-                                .lineLimit(1)
-                        }
+                } header: {
+                    Text("Sync Status")
+                }
+                
+                Section {
+                    HStack {
+                        Text("API Server")
+                        Spacer()
+                        Text("health.neuwirth.cc")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
                     }
-
-                    Button(action: {
-                        showingLocationPicker = true
-                    }) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Save Location")
-                                    .foregroundColor(.primary)
-                                Text(getSaveLocationDescription())
-                                    .foregroundColor(.secondary)
-                                    .font(.caption)
-                                    .lineLimit(2)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .foregroundColor(.secondary)
-                                .font(.caption)
+                    
+                    HStack {
+                        Text("Device Paired")
+                        Spacer()
+                        if apiClient.isPaired {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                        } else {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.red)
                         }
                     }
                 } header: {
-                    Text("Export Status")
+                    Text("API Configuration")
                 }
 
                 Section {
@@ -120,7 +115,7 @@ struct SettingsView: View {
                     HStack {
                         Text("Version")
                         Spacer()
-                        Text("1.0.0")
+                        Text("1.1.0")
                             .foregroundColor(.secondary)
                     }
                 } header: {
@@ -145,11 +140,6 @@ struct SettingsView: View {
             } message: {
                 Text("This will reset your sync history and remove all cached export information. This cannot be undone.")
             }
-            .sheet(isPresented: $showingLocationPicker) {
-                DocumentPicker(onSelect: { url in
-                    exporter.setSaveLocation(url)
-                })
-            }
         }
     }
 
@@ -157,26 +147,6 @@ struct SettingsView: View {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
         return formatter.string(from: NSNumber(value: number)) ?? "\(number)"
-    }
-
-    private func getSaveLocationDescription() -> String {
-        if let saveURL = exporter.saveLocationURL {
-            let components = saveURL.pathComponents
-            // Try to find a meaningful parent directory name
-            if components.count >= 2 {
-                let parent = components[components.count - 2]
-                let folder = saveURL.lastPathComponent
-                return "\(parent)/\(folder)"
-            }
-            return saveURL.lastPathComponent
-        } else {
-            // Fallback location description
-            if FileManager.default.ubiquityIdentityToken != nil {
-                return "iCloud Drive/Health Export/"
-            } else {
-                return "On My iPhone/Documents/Health Export/"
-            }
-        }
     }
 }
 

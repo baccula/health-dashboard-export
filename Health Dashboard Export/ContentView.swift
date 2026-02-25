@@ -12,20 +12,12 @@ struct ContentView: View {
     @StateObject private var exporter = HealthExporter()
     @State private var showingError = false
     @State private var showingAuthorizationPrompt = false
-    @State private var showingShareSheet = false
     @State private var showingSuccess = false
     @State private var successMessage = ""
     @State private var showingSettings = false
-    @State private var showingLocationPicker = false
     @State private var showingOnboarding = false
-    @State private var pendingExportType: ExportType?
     
     private let apiClient = APIClient.shared
-    
-    enum ExportType {
-        case incremental
-        case full
-    }
     
     var body: some View {
         NavigationView {
@@ -52,31 +44,9 @@ struct ContentView: View {
                     )
                     
                     StatusRow(
-                        label: "Records",
+                        label: "Records Uploaded",
                         value: formatNumber(exporter.totalRecords)
                     )
-                    
-                    if let fileURL = exporter.lastExportedFileURL {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Last Export")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            
-                            Button(action: {
-                                showingShareSheet = true
-                            }) {
-                                HStack {
-                                    Image(systemName: "doc.fill")
-                                    Text(fileURL.lastPathComponent)
-                                        .font(.caption)
-                                        .lineLimit(1)
-                                    Spacer()
-                                    Image(systemName: "square.and.arrow.up")
-                                }
-                                .foregroundColor(.blue)
-                            }
-                        }
-                    }
                     
                     if exporter.isExporting {
                         VStack(alignment: .leading, spacing: 8) {
@@ -208,20 +178,8 @@ struct ContentView: View {
                 }
             }
         }
-        .sheet(isPresented: $showingShareSheet) {
-            if let fileURL = exporter.lastExportedFileURL {
-                ShareSheet(activityItems: [fileURL])
-            }
-        }
         .sheet(isPresented: $showingSettings) {
             SettingsView(exporter: exporter)
-        }
-        .sheet(isPresented: $showingLocationPicker) {
-            DocumentPicker(onSelect: { url in
-                Task {
-                    await executeExport(at: url)
-                }
-            })
         }
         .fullScreenCover(isPresented: $showingOnboarding) {
             OnboardingView(isOnboardingComplete: $showingOnboarding)
@@ -245,77 +203,30 @@ struct ContentView: View {
     }
     
     private func performSync() async {
-        // Only prompt for location if one hasn't been set
-        if exporter.saveLocationURL == nil {
-            pendingExportType = .incremental
-            showingLocationPicker = true
-        } else {
-            // Location already set, proceed directly
-            do {
-                let recordsBefore = exporter.totalRecords
-                try await exporter.performIncrementalSync()
-                let newRecords = exporter.totalRecords - recordsBefore
+        do {
+            let recordsBefore = exporter.totalRecords
+            try await exporter.performIncrementalSync()
+            let newRecords = exporter.totalRecords - recordsBefore
 
-                if newRecords > 0 {
-                    successMessage = "Sync completed! \(formatNumber(newRecords)) new records exported."
-                } else {
-                    successMessage = "Sync completed! No new data since last sync."
-                }
-                showingSuccess = true
-            } catch {
-                print("Export error: \(error)")
+            if newRecords > 0 {
+                successMessage = "Sync completed! \(formatNumber(newRecords)) new records uploaded to dashboard."
+            } else {
+                successMessage = "Sync completed! No new data since last sync."
             }
+            showingSuccess = true
+        } catch {
+            print("Sync error: \(error)")
         }
     }
 
     private func performFullExport() async {
-        // Only prompt for location if one hasn't been set
-        if exporter.saveLocationURL == nil {
-            pendingExportType = .full
-            showingLocationPicker = true
-        } else {
-            // Location already set, proceed directly
-            do {
-                try await exporter.performFullExport()
-                successMessage = "Full export completed! \(formatNumber(exporter.totalRecords)) total records exported."
-                showingSuccess = true
-            } catch {
-                print("Export error: \(error)")
-            }
-        }
-    }
-
-    private func executeExport(at url: URL) async {
-        // Save the selected location
-        exporter.setSaveLocation(url)
-
         do {
-            switch pendingExportType {
-            case .incremental:
-                let recordsBefore = exporter.totalRecords
-                try await exporter.performIncrementalSync()
-                let newRecords = exporter.totalRecords - recordsBefore
-
-                if newRecords > 0 {
-                    successMessage = "Sync completed! \(formatNumber(newRecords)) new records exported."
-                } else {
-                    successMessage = "Sync completed! No new data since last sync."
-                }
-                showingSuccess = true
-
-            case .full:
-                try await exporter.performFullExport()
-                successMessage = "Full export completed! \(formatNumber(exporter.totalRecords)) total records exported."
-                showingSuccess = true
-
-            case .none:
-                break
-            }
+            try await exporter.performFullExport()
+            successMessage = "Full export completed! \(formatNumber(exporter.totalRecords)) total records uploaded to dashboard."
+            showingSuccess = true
         } catch {
             print("Export error: \(error)")
         }
-
-        pendingExportType = nil
     }
     
     // MARK: - Helpers
@@ -344,22 +255,6 @@ struct StatusRow: View {
                 .fontWeight(.semibold)
         }
     }
-}
-
-// MARK: - Share Sheet
-
-struct ShareSheet: UIViewControllerRepresentable {
-    let activityItems: [Any]
-    
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        let controller = UIActivityViewController(
-            activityItems: activityItems,
-            applicationActivities: nil
-        )
-        return controller
-    }
-    
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 #Preview {

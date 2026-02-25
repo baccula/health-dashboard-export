@@ -126,11 +126,7 @@ struct GetExportStatusIntent: AppIntent {
             status += "Last Sync: Never\n"
         }
         
-        status += "Total Records: \(exporter.totalRecords)\n"
-        
-        if let fileURL = exporter.lastExportedFileURL {
-            status += "Last File: \(fileURL.lastPathComponent)"
-        }
+        status += "Total Records: \(exporter.totalRecords)"
         
         return .result(value: status)
     }
