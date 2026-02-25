@@ -13,7 +13,7 @@ import Combine
 @MainActor
 class HealthExporter: ObservableObject {
     private let healthStore = HKHealthStore()
-    
+
     @Published var isAuthorized = false
     @Published var isExporting = false
     @Published var exportProgress: Double = 0.0
@@ -23,13 +23,27 @@ class HealthExporter: ObservableObject {
     @Published var errorMessage: String?
     @Published var lastExportedFileURL: URL?
     @Published var saveLocationURL: URL?
-    
+
     private let userDefaults = UserDefaults.standard
     private let lastSyncKey = "lastSyncDate"
     private let totalRecordsKey = "totalRecords"
     private let saveLocationKey = "saveLocationBookmark"
-    
+
+    static let syncStateDidChangeNotification = Notification.Name("HealthExporterSyncStateDidChange")
+
     init() {
+        loadSyncState()
+
+        // Listen for sync state changes from other instances
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleSyncStateChange),
+            name: HealthExporter.syncStateDidChangeNotification,
+            object: nil
+        )
+    }
+
+    @objc private func handleSyncStateChange() {
         loadSyncState()
     }
     
@@ -57,13 +71,19 @@ class HealthExporter: ObservableObject {
             userDefaults.set(lastSync, forKey: lastSyncKey)
         }
         userDefaults.set(totalRecords, forKey: totalRecordsKey)
-        
+
         // Save location bookmark
         if let url = saveLocationURL {
             if let bookmarkData = try? url.bookmarkData(options: .minimalBookmark) {
                 userDefaults.set(bookmarkData, forKey: saveLocationKey)
             }
         }
+
+        // Notify other instances that sync state has changed
+        NotificationCenter.default.post(
+            name: HealthExporter.syncStateDidChangeNotification,
+            object: nil
+        )
     }
     
     func setSaveLocation(_ url: URL) {
