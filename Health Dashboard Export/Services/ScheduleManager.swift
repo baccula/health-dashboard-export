@@ -118,49 +118,66 @@ class ScheduleManager: ObservableObject {
     // MARK: - Background Task Execution
     
     private func handleBackgroundTask(_ task: BGAppRefreshTask) async {
+        print("🔔 Background task triggered at \(Date())")
+
         // Schedule next background task
         scheduleBackgroundTask()
-        
+
         // Create task expiration handler
         task.expirationHandler = {
-            print("⚠️ Background task expired")
+            print("⚠️ Background task expired before completion")
         }
-        
+
         // Find schedules that need to run
         let now = Date()
+        print("📋 Checking \(schedules.count) schedules at \(now)")
+
         let schedulesToRun = schedules.filter { schedule in
-            guard schedule.isEnabled else { return false }
-            guard let nextRun = schedule.nextRun else { return false }
-            return nextRun <= now
+            guard schedule.isEnabled else {
+                print("⏭️ Skipping disabled schedule: \(schedule.name)")
+                return false
+            }
+            guard let nextRun = schedule.nextRun else {
+                print("⏭️ Skipping schedule with no next run: \(schedule.name)")
+                return false
+            }
+            let shouldRun = nextRun <= now
+            print("🔍 Schedule '\(schedule.name)': nextRun=\(nextRun), shouldRun=\(shouldRun)")
+            return shouldRun
         }
-        
+
         guard !schedulesToRun.isEmpty else {
+            print("✅ No schedules ready to run")
             task.setTaskCompleted(success: true)
             return
         }
-        
+
+        print("🚀 Executing \(schedulesToRun.count) scheduled sync(s)")
+
         // Execute syncs
         let exporter = HealthExporter()
         var success = true
-        
+
         for schedule in schedulesToRun {
             do {
+                print("▶️ Starting sync: \(schedule.name) (\(schedule.syncType.rawValue))")
                 switch schedule.syncType {
                 case .incremental:
                     try await exporter.performIncrementalSync()
                 case .full:
                     try await exporter.performFullExport()
                 }
-                
+
                 // Update schedule
                 updateScheduleAfterRun(schedule)
                 print("✓ Executed scheduled sync: \(schedule.name)")
             } catch {
-                print("✗ Failed to execute scheduled sync: \(error)")
+                print("✗ Failed to execute scheduled sync '\(schedule.name)': \(error)")
                 success = false
             }
         }
-        
+
+        print("🏁 Background task completed: success=\(success)")
         task.setTaskCompleted(success: success)
     }
     
@@ -176,17 +193,67 @@ class ScheduleManager: ObservableObject {
     }
     
     // MARK: - Manual Execution
-    
+
     func executeScheduleNow(_ schedule: SyncSchedule) async throws {
         let exporter = HealthExporter()
-        
+
         switch schedule.syncType {
         case .incremental:
             try await exporter.performIncrementalSync()
         case .full:
             try await exporter.performFullExport()
         }
-        
+
         updateScheduleAfterRun(schedule)
+    }
+
+    // MARK: - Testing/Debugging
+
+    /// Simulates what would happen if the background task fired right now
+    /// Useful for testing scheduled sync logic without waiting for iOS
+    func simulateBackgroundTaskExecution() async {
+        print("🧪 SIMULATED background task execution")
+        let now = Date()
+        print("📋 Current time: \(now)")
+        print("📋 Active schedules: \(schedules.count)")
+
+        for schedule in schedules {
+            if let nextRun = schedule.nextRun {
+                let timeUntil = nextRun.timeIntervalSince(now)
+                print("   - '\(schedule.name)': nextRun in \(timeUntil/60) minutes, enabled=\(schedule.isEnabled)")
+            } else {
+                print("   - '\(schedule.name)': NO NEXT RUN SET")
+            }
+        }
+
+        let schedulesToRun = schedules.filter { schedule in
+            guard schedule.isEnabled else { return false }
+            guard let nextRun = schedule.nextRun else { return false }
+            return nextRun <= now
+        }
+
+        if schedulesToRun.isEmpty {
+            print("✅ No schedules ready to execute now")
+            return
+        }
+
+        print("🚀 Would execute \(schedulesToRun.count) schedule(s)")
+
+        let exporter = HealthExporter()
+        for schedule in schedulesToRun {
+            do {
+                print("▶️ Executing: \(schedule.name)")
+                switch schedule.syncType {
+                case .incremental:
+                    try await exporter.performIncrementalSync()
+                case .full:
+                    try await exporter.performFullExport()
+                }
+                updateScheduleAfterRun(schedule)
+                print("✓ Completed: \(schedule.name)")
+            } catch {
+                print("✗ Failed: \(schedule.name) - \(error)")
+            }
+        }
     }
 }

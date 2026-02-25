@@ -130,27 +130,31 @@ enum ScheduleFrequency: String, Codable, CaseIterable {
     func calculateNextRunAfter(date: Date, at time: Date) -> Date {
         let calendar = Calendar.current
         let timeComponents = calendar.dateComponents([.hour, .minute], from: time)
-        
+
+        // Start from the date that just ran, then add the interval
         var components = calendar.dateComponents([.year, .month, .day], from: date)
         components.hour = timeComponents.hour
         components.minute = timeComponents.minute
         components.second = 0
-        
-        guard var nextRun = calendar.date(from: components) else {
+
+        guard let baseDate = calendar.date(from: components) else {
             return date
         }
-        
+
+        // Add the appropriate interval from the base date
+        let nextRun: Date
         switch self {
         case .daily:
-            nextRun = calendar.date(byAdding: .day, value: 1, to: nextRun) ?? nextRun
+            nextRun = calendar.date(byAdding: .day, value: 1, to: baseDate) ?? baseDate
         case .weekly:
-            nextRun = calendar.date(byAdding: .weekOfYear, value: 1, to: nextRun) ?? nextRun
+            nextRun = calendar.date(byAdding: .weekOfYear, value: 1, to: baseDate) ?? baseDate
         case .biweekly:
-            nextRun = calendar.date(byAdding: .weekOfYear, value: 2, to: nextRun) ?? nextRun
+            nextRun = calendar.date(byAdding: .weekOfYear, value: 2, to: baseDate) ?? baseDate
         case .monthly:
-            nextRun = calendar.date(byAdding: .month, value: 1, to: nextRun) ?? nextRun
+            nextRun = calendar.date(byAdding: .month, value: 1, to: baseDate) ?? baseDate
         }
-        
+
+        print("📅 Calculated next run: \(nextRun) (from \(date), frequency: \(self.rawValue))")
         return nextRun
     }
 }
