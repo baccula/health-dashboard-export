@@ -17,7 +17,10 @@ struct ContentView: View {
     @State private var successMessage = ""
     @State private var showingSettings = false
     @State private var showingLocationPicker = false
+    @State private var showingOnboarding = false
     @State private var pendingExportType: ExportType?
+    
+    private let apiClient = APIClient.shared
     
     enum ExportType {
         case incremental
@@ -191,10 +194,19 @@ struct ContentView: View {
             Text(successMessage)
         }
         .task {
+            checkPairingStatus()
             await requestAuthorization()
         }
         .onChange(of: exporter.errorMessage) { oldValue, newValue in
             showingError = newValue != nil
+        }
+        .onChange(of: showingOnboarding) { oldValue, newValue in
+            // When onboarding closes, request HealthKit auth
+            if oldValue && !newValue {
+                Task {
+                    await requestAuthorization()
+                }
+            }
         }
         .sheet(isPresented: $showingShareSheet) {
             if let fileURL = exporter.lastExportedFileURL {
@@ -211,6 +223,15 @@ struct ContentView: View {
                 }
             })
         }
+        .fullScreenCover(isPresented: $showingOnboarding) {
+            OnboardingView(isOnboardingComplete: $showingOnboarding)
+        }
+    }
+    
+    // MARK: - Pairing
+    
+    private func checkPairingStatus() {
+        showingOnboarding = !apiClient.isPaired
     }
     
     // MARK: - Actions
