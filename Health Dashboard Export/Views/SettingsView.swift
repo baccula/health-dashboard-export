@@ -87,19 +87,6 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    NavigationLink(destination: ScheduleManagerView(exporter: exporter)) {
-                        HStack {
-                            Image(systemName: "calendar.badge.clock")
-                            Text("Scheduled Syncs")
-                        }
-                    }
-                } header: {
-                    Text("Scheduled Sync")
-                } footer: {
-                    Text("Configure automatic syncs to run at regular intervals.")
-                }
-
-                Section {
                     Button(role: .destructive, action: {
                         showingClearDataAlert = true
                     }) {
