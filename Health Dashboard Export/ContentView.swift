@@ -165,18 +165,16 @@ struct ContentView: View {
         }
         .task {
             checkPairingStatus()
-            await requestAuthorization()
+            // Only request auth if already paired (returning user)
+            if apiClient.isPaired {
+                await requestAuthorization()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .deviceUnpaired)) { _ in
+            checkPairingStatus()
         }
         .onChange(of: exporter.errorMessage) { oldValue, newValue in
             showingError = newValue != nil
-        }
-        .onChange(of: showingOnboarding) { oldValue, newValue in
-            // When onboarding closes, request HealthKit auth
-            if oldValue && !newValue {
-                Task {
-                    await requestAuthorization()
-                }
-            }
         }
         .sheet(isPresented: $showingSettings) {
             SettingsView(exporter: exporter)

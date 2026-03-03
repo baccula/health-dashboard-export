@@ -6,14 +6,13 @@
 //
 
 import SwiftUI
-import AppIntents
-import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @ObservedObject var exporter: HealthExporter
     @Environment(\.dismiss) private var dismiss
     @State private var showingClearDataAlert = false
-    @State private var showingShortcutsGuide = false
+    @State private var showingAPISettings = false
+    @State private var showingRepairAlert = false
     
     private let apiClient = APIClient.shared
 
@@ -39,12 +38,23 @@ struct SettingsView: View {
                 }
                 
                 Section {
-                    HStack {
-                        Text("API Server")
-                        Spacer()
-                        Text("health.neuwirth.cc")
-                            .foregroundColor(.secondary)
-                            .font(.caption)
+                    Button(action: {
+                        showingAPISettings = true
+                    }) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("API Server")
+                                    .foregroundColor(.primary)
+                                Text(apiClient.baseURL)
+                                    .foregroundColor(.secondary)
+                                    .font(.caption)
+                                    .lineLimit(1)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                        }
                     }
                     
                     HStack {
@@ -58,8 +68,22 @@ struct SettingsView: View {
                                 .foregroundColor(.red)
                         }
                     }
+                    
+                    if apiClient.isPaired {
+                        Button(action: {
+                            showingRepairAlert = true
+                        }) {
+                            HStack {
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                                Text("Re-pair Device")
+                            }
+                            .foregroundColor(.orange)
+                        }
+                    }
                 } header: {
                     Text("API Configuration")
+                } footer: {
+                    Text("Configure the API server endpoint for syncing your health data.")
                 }
 
                 Section {
@@ -69,31 +93,10 @@ struct SettingsView: View {
                             Text("Scheduled Syncs")
                         }
                     }
-
-                    NavigationLink(destination: ShortcutsGuideView()) {
-                        HStack {
-                            Image(systemName: "link.badge.plus")
-                            Text("Shortcuts Guide")
-                        }
-                    }
-
-                    AddToSiriButton(intent: SyncNowIntent()) {
-                        HStack {
-                            Image(systemName: "waveform.circle.fill")
-                            Text("Add Sync to Siri")
-                        }
-                    }
-
-                    AddToSiriButton(intent: FullExportIntent()) {
-                        HStack {
-                            Image(systemName: "waveform.circle.fill")
-                            Text("Add Full Export to Siri")
-                        }
-                    }
                 } header: {
-                    Text("Shortcuts & Automation")
+                    Text("Scheduled Sync")
                 } footer: {
-                    Text("Add shortcuts to Siri for voice control, or use with the Shortcuts app for automation.")
+                    Text("Configure automatic syncs to run at regular intervals.")
                 }
 
                 Section {
@@ -139,6 +142,17 @@ struct SettingsView: View {
                 }
             } message: {
                 Text("This will reset your sync history and remove all cached export information. This cannot be undone.")
+            }
+            .sheet(isPresented: $showingAPISettings) {
+                APISettingsView()
+            }
+            .alert("Re-pair Device?", isPresented: $showingRepairAlert) {
+                Button("Cancel", role: .cancel) {}
+                Button("Re-pair", role: .destructive) {
+                    apiClient.unpairDevice()
+                }
+            } message: {
+                Text("This will unpair your device. You'll need to enter a new pairing code.")
             }
         }
     }

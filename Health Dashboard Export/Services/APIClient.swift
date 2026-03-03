@@ -11,9 +11,24 @@ import Foundation
 class APIClient {
     static let shared = APIClient()
     
-    let baseURL = "https://health.neuwirth.cc"
+    private let defaultBaseURL = "https://health.neuwirth.cc"
+    private let userDefaults = UserDefaults.standard
+    private let baseURLKey = "apiBaseURL"
     private let keychain = KeychainHelper.shared
     private let apiKeyName = "healthDashboardAPIKey"
+    
+    var baseURL: String {
+        get {
+            userDefaults.string(forKey: baseURLKey) ?? defaultBaseURL
+        }
+        set {
+            userDefaults.set(newValue, forKey: baseURLKey)
+        }
+    }
+    
+    func resetToDefaultURL() {
+        userDefaults.removeObject(forKey: baseURLKey)
+    }
     
     private init() {}
     
@@ -35,6 +50,15 @@ class APIClient {
         try keychain.delete(key: apiKeyName)
     }
     
+    /// Unpair the device (clears API key)
+    func unpairDevice() {
+        try? clearAPIKey()
+        print("🔓 Device unpaired")
+        
+        // Notify observers that pairing status changed
+        NotificationCenter.default.post(name: .deviceUnpaired, object: nil)
+    }
+    
     // MARK: - Pairing
     
     /// Confirm a pairing code and receive an API key
@@ -43,6 +67,8 @@ class APIClient {
     /// - Throws: APIError on failure
     func confirmPairingCode(_ code: String) async throws -> PairResponse {
         let url = URL(string: "\(baseURL)/api/pair/confirm")!
+        print("🌐 Pairing URL: \(url)")
+        
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -50,23 +76,39 @@ class APIClient {
         
         let body = PairConfirmRequest(code: code)
         request.httpBody = try JSONEncoder().encode(body)
+        print("📤 Sending pairing request with code: \(code)")
         
-        let (data, response) = try await URLSession.shared.data(for: request)
-        let httpResponse = response as! HTTPURLResponse
-        
-        guard httpResponse.statusCode == 200 else {
-            let errorResponse = try? JSONDecoder().decode(APIErrorResponse.self, from: data)
-            let message = errorResponse?.message ?? "Pairing failed with status \(httpResponse.statusCode)"
-            throw APIError.pairingFailed(message)
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let httpResponse = response as! HTTPURLResponse
+            print("📥 Pairing response status: \(httpResponse.statusCode)")
+            
+            // Debug: Print raw response
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("📥 Raw pairing response: \(responseString)")
+            }
+            
+            guard httpResponse.statusCode == 200 else {
+                let errorResponse = try? JSONDecoder().decode(APIErrorResponse.self, from: data)
+                let message = errorResponse?.message ?? "Pairing failed with status \(httpResponse.statusCode)"
+                print("❌ Pairing failed: \(message)")
+                throw APIError.pairingFailed(message)
+            }
+            
+            let pairResponse = try JSONDecoder().decode(PairResponse.self, from: data)
+            print("✓ Decoded pairing response: deviceName=\(pairResponse.deviceName)")
+            
+            // Save API key to Keychain
+            try keychain.save(key: apiKeyName, value: pairResponse.apiKey)
+            print("✓ Device paired successfully: \(pairResponse.deviceName)")
+            
+            return pairResponse
+        } catch let error as APIError {
+            throw error
+        } catch {
+            print("❌ Network/decoding error during pairing: \(error)")
+            throw APIError.pairingFailed("Connection error: \(error.localizedDescription)")
         }
-        
-        let pairResponse = try JSONDecoder().decode(PairResponse.self, from: data)
-        
-        // Save API key to Keychain
-        try keychain.save(key: apiKeyName, value: pairResponse.apiKey)
-        print("✓ Device paired successfully: \(pairResponse.deviceName)")
-        
-        return pairResponse
     }
     
     // MARK: - Upload
@@ -87,22 +129,46 @@ class APIClient {
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 60 // Upload can take longer
+        request.timeoutInterval = 300 // 5 minutes for large uploads
         
         let uploadData = UploadData(records: records, workouts: workouts)
         let body = UploadRequest(data: uploadData)
-        request.httpBody = try JSONEncoder().encode(body)
+        
+        print("📦 Encoding upload data...")
+        let encoder = JSONEncoder()
+        request.httpBody = try encoder.encode(body)
         
         let totalSize = records.count + workouts.count
+        let bodySize = request.httpBody?.count ?? 0
+        let bodySizeMB = Double(bodySize) / 1_024_000
         print("📤 Uploading \(records.count) records + \(workouts.count) workouts (total: \(totalSize))")
+        print("📊 Payload size: \(String(format: "%.2f", bodySizeMB)) MB")
+        print("🌐 Sending to: \(baseURL)/api/upload")
         
+        // Debug: Show sample of first record
+        if let firstRecord = records.first {
+            print("📋 Sample record: type=\(firstRecord.type), value=\(firstRecord.value ?? 0), startDate=\(firstRecord.startDate)")
+        }
+        
+        print("⏳ Waiting for server response...")
         let (data, response) = try await performRequestWithRetry(request: request)
         let httpResponse = response as! HTTPURLResponse
+        
+        print("✅ Server responded with status: \(httpResponse.statusCode)")
+        
+        // Debug: Print raw response
+        if let responseString = String(data: data, encoding: .utf8) {
+            print("📥 Raw server response: \(responseString)")
+        }
         
         switch httpResponse.statusCode {
         case 200:
             let uploadResponse = try JSONDecoder().decode(UploadResponse.self, from: data)
-            print("✓ Upload successful: \(uploadResponse.records.imported) records, \(uploadResponse.workouts.imported) workouts imported")
+            print("✓ Upload successful: \(uploadResponse.inserted) inserted, \(uploadResponse.skipped) skipped, \(uploadResponse.errors.count) errors")
+            if uploadResponse.inserted == 0 && uploadResponse.skipped == 0 && records.count > 0 {
+                print("⚠️ WARNING: Server accepted data but reported 0 insertions and 0 skips")
+                print("   This suggests the server may not be processing the data correctly")
+            }
             return uploadResponse
             
         case 401, 403:
@@ -226,9 +292,15 @@ class APIClient {
         
         for attempt in 1...maxAttempts {
             do {
-                return try await URLSession.shared.data(for: request)
+                print("🔄 Network request attempt \(attempt)/\(maxAttempts)...")
+                let startTime = Date()
+                let result = try await URLSession.shared.data(for: request)
+                let elapsed = Date().timeIntervalSince(startTime)
+                print("✓ Request completed in \(String(format: "%.1f", elapsed))s")
+                return result
             } catch {
                 lastError = error
+                print("❌ Request failed: \(error.localizedDescription)")
                 
                 // Don't retry on last attempt
                 if attempt == maxAttempts {
@@ -242,6 +314,7 @@ class APIClient {
             }
         }
         
+        print("💥 All retry attempts exhausted")
         throw lastError ?? APIError.networkError
     }
 }
@@ -278,4 +351,10 @@ enum APIError: LocalizedError {
             return "Network error. Please check your connection to health.neuwirth.cc"
         }
     }
+}
+
+// MARK: - Notifications
+
+extension Notification.Name {
+    static let deviceUnpaired = Notification.Name("deviceUnpaired")
 }

@@ -70,9 +70,18 @@ struct APIWorkoutRecord: Codable {
 }
 
 struct UploadResponse: Codable {
-    let status: String
-    let records: UploadStats
-    let workouts: UploadStats
+    let inserted: Int
+    let skipped: Int
+    let errors: [String]  // Array of error messages
+    
+    // Computed properties to match the expected interface
+    var records: UploadStats {
+        UploadStats(received: 0, imported: inserted, skipped_duplicate: skipped, errors: errors.count)
+    }
+    
+    var workouts: UploadStats {
+        UploadStats(received: 0, imported: 0, skipped_duplicate: 0, errors: 0)
+    }
 }
 
 struct UploadStats: Codable {

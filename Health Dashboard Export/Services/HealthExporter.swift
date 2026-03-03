@@ -84,7 +84,10 @@ class HealthExporter: ObservableObject {
         userDefaults.removeObject(forKey: lastSyncKey)
         userDefaults.removeObject(forKey: totalRecordsKey)
         
-        print("✓ All sync data cleared")
+        // Unpair the device
+        apiClient.unpairDevice()
+        
+        print("✓ All sync data cleared and device unpaired")
     }
     
     // MARK: - HealthKit Authorization
@@ -129,25 +132,22 @@ class HealthExporter: ObservableObject {
             let apiRecords = transformRecordsToAPIFormat(hkRecords)
             let apiWorkouts = transformWorkoutsToAPIFormat(hkWorkouts)
             
-            // Upload to API
-            exportProgressText = "Uploading to dashboard..."
-            exportProgress = 0.95
-            
-            let response = try await apiClient.uploadHealthData(
+            // Upload in chunks to handle large datasets
+            let uploadedCounts = try await uploadInChunks(
                 records: apiRecords,
                 workouts: apiWorkouts
             )
             
             // Update sync state
             lastSyncDate = Date()
-            totalRecords = response.records.imported + response.workouts.imported
+            totalRecords = uploadedCounts.recordsImported + uploadedCounts.workoutsImported
             saveSyncState()
             
             print("✓ Full export completed via API")
             print("✓ Uploaded \(apiRecords.count) records + \(apiWorkouts.count) workouts")
-            print("✓ Imported \(response.records.imported) records + \(response.workouts.imported) workouts")
-            if response.records.skipped_duplicate > 0 || response.workouts.skipped_duplicate > 0 {
-                print("  ℹ️ Skipped \(response.records.skipped_duplicate) duplicate records + \(response.workouts.skipped_duplicate) duplicate workouts")
+            print("✓ Imported \(uploadedCounts.recordsImported) records + \(uploadedCounts.workoutsImported) workouts")
+            if uploadedCounts.recordsSkipped > 0 || uploadedCounts.workoutsSkipped > 0 {
+                print("  ℹ️ Skipped \(uploadedCounts.recordsSkipped) duplicate records + \(uploadedCounts.workoutsSkipped) duplicate workouts")
             }
         } catch {
             errorMessage = error.localizedDescription
@@ -183,31 +183,88 @@ class HealthExporter: ObservableObject {
             let apiRecords = transformRecordsToAPIFormat(hkRecords)
             let apiWorkouts = transformWorkoutsToAPIFormat(hkWorkouts)
             
-            // Upload to API
-            exportProgressText = "Uploading to dashboard..."
-            exportProgress = 0.95
-            
-            let response = try await apiClient.uploadHealthData(
+            // Upload in chunks to handle large datasets
+            let uploadedCounts = try await uploadInChunks(
                 records: apiRecords,
                 workouts: apiWorkouts
             )
             
             // Update sync state
             lastSyncDate = Date()
-            totalRecords += response.records.imported + response.workouts.imported
+            totalRecords += uploadedCounts.recordsImported + uploadedCounts.workoutsImported
             saveSyncState()
             
             print("✓ Incremental sync completed via API")
             print("✓ Uploaded \(apiRecords.count) new records + \(apiWorkouts.count) new workouts since \(sinceDate)")
-            print("✓ Imported \(response.records.imported) records + \(response.workouts.imported) workouts")
-            if response.records.skipped_duplicate > 0 || response.workouts.skipped_duplicate > 0 {
-                print("  ℹ️ Skipped \(response.records.skipped_duplicate) duplicate records + \(response.workouts.skipped_duplicate) duplicate workouts")
+            print("✓ Imported \(uploadedCounts.recordsImported) records + \(uploadedCounts.workoutsImported) workouts")
+            if uploadedCounts.recordsSkipped > 0 || uploadedCounts.workoutsSkipped > 0 {
+                print("  ℹ️ Skipped \(uploadedCounts.recordsSkipped) duplicate records + \(uploadedCounts.workoutsSkipped) duplicate workouts")
             }
         } catch {
             errorMessage = error.localizedDescription
             print("✗ Sync failed: \(error)")
             throw error
         }
+    }
+    
+    // MARK: - Chunked Upload
+    
+    private struct UploadCounts {
+        var recordsImported: Int = 0
+        var recordsSkipped: Int = 0
+        var workoutsImported: Int = 0
+        var workoutsSkipped: Int = 0
+    }
+    
+    /// Upload data in chunks to avoid memory issues with large datasets
+    private func uploadInChunks(
+        records: [APIHealthRecord],
+        workouts: [APIWorkoutRecord]
+    ) async throws -> UploadCounts {
+        let chunkSize = 10_000
+        var counts = UploadCounts()
+        
+        let totalRecords = records.count
+        let totalWorkouts = workouts.count
+        let recordChunks = stride(from: 0, to: totalRecords, by: chunkSize).map {
+            Array(records[$0..<min($0 + chunkSize, totalRecords)])
+        }
+        let workoutChunks = stride(from: 0, to: totalWorkouts, by: chunkSize).map {
+            Array(workouts[$0..<min($0 + chunkSize, totalWorkouts)])
+        }
+        
+        let totalChunks = max(recordChunks.count, workoutChunks.count)
+        
+        print("📦 Uploading data in \(totalChunks) chunk(s) (\(chunkSize) items per chunk)")
+        print("   Records: \(totalRecords) in \(recordChunks.count) chunk(s)")
+        print("   Workouts: \(totalWorkouts) in \(workoutChunks.count) chunk(s)")
+        
+        for chunkIndex in 0..<totalChunks {
+            let recordChunk = chunkIndex < recordChunks.count ? recordChunks[chunkIndex] : []
+            let workoutChunk = chunkIndex < workoutChunks.count ? workoutChunks[chunkIndex] : []
+            
+            exportProgressText = "Uploading chunk \(chunkIndex + 1) of \(totalChunks)..."
+            exportProgress = 0.9 + (0.1 * Double(chunkIndex) / Double(totalChunks))
+            
+            print("📤 Uploading chunk \(chunkIndex + 1)/\(totalChunks): \(recordChunk.count) records + \(workoutChunk.count) workouts")
+            
+            let response = try await apiClient.uploadHealthData(
+                records: recordChunk,
+                workouts: workoutChunk
+            )
+            
+            counts.recordsImported += response.records.imported
+            counts.recordsSkipped += response.records.skipped_duplicate
+            counts.workoutsImported += response.workouts.imported
+            counts.workoutsSkipped += response.workouts.skipped_duplicate
+            
+            print("   ✓ Chunk \(chunkIndex + 1) imported: \(response.records.imported) records + \(response.workouts.imported) workouts")
+        }
+        
+        exportProgressText = "Upload complete"
+        exportProgress = 1.0
+        
+        return counts
     }
     
     // MARK: - Data Export
