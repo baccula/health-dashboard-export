@@ -20,8 +20,6 @@ struct ScheduleEditorView: View {
     @State private var frequency: ScheduleFrequency
     @State private var time: Date
     @State private var isEnabled: Bool
-    @State private var showingLocationPicker = false
-    @State private var showingLocationAlert = false
     
     init(scheduleManager: ScheduleManager, exporter: HealthExporter, scheduleToEdit: SyncSchedule? = nil) {
         self.scheduleManager = scheduleManager
@@ -152,34 +150,10 @@ struct ScheduleEditorView: View {
                     .disabled(name.isEmpty)
                 }
             }
-            .alert("Save Location Required", isPresented: $showingLocationAlert) {
-                Button("Choose Location") {
-                    showingLocationPicker = true
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("Please select a save location for your health exports before creating a scheduled sync.")
-            }
-            .sheet(isPresented: $showingLocationPicker) {
-                DocumentPicker(onSelect: { url in
-                    exporter.setSaveLocation(url)
-                    // After setting location, save the schedule
-                    performSave()
-                })
-            }
         }
     }
     
     private func saveSchedule() {
-        // Check if save location is set
-        if exporter.saveLocationURL == nil {
-            showingLocationAlert = true
-        } else {
-            performSave()
-        }
-    }
-
-    private func performSave() {
         if let existingSchedule = scheduleToEdit {
             // Update existing schedule
             let updated = SyncSchedule(

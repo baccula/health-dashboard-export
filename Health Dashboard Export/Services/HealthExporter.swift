@@ -13,6 +13,7 @@ import Combine
 @MainActor
 class HealthExporter: ObservableObject {
     private let healthStore = HKHealthStore()
+    private let apiClient = APIClient.shared
 
     @Published var isAuthorized = false
     @Published var isExporting = false
@@ -21,15 +22,20 @@ class HealthExporter: ObservableObject {
     @Published var lastSyncDate: Date?
     @Published var totalRecords: Int = 0
     @Published var errorMessage: String?
-    @Published var lastExportedFileURL: URL?
-    @Published var saveLocationURL: URL?
 
     private let userDefaults = UserDefaults.standard
     private let lastSyncKey = "lastSyncDate"
     private let totalRecordsKey = "totalRecords"
-    private let saveLocationKey = "saveLocationBookmark"
 
     static let syncStateDidChangeNotification = Notification.Name("HealthExporterSyncStateDidChange")
+    
+    // Date formatter for API spec format: "yyyy-MM-dd HH:mm:ss Z"
+    private lazy var apiDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss Z"
+        formatter.timeZone = TimeZone.current
+        return formatter
+    }()
 
     init() {
         loadSyncState()
@@ -54,16 +60,6 @@ class HealthExporter: ObservableObject {
             lastSyncDate = lastSync
         }
         totalRecords = userDefaults.integer(forKey: totalRecordsKey)
-        
-        // Load saved location bookmark
-        if let bookmarkData = userDefaults.data(forKey: saveLocationKey) {
-            var isStale = false
-            if let url = try? URL(resolvingBookmarkData: bookmarkData, bookmarkDataIsStale: &isStale) {
-                if !isStale {
-                    saveLocationURL = url
-                }
-            }
-        }
     }
     
     private func saveSyncState() {
@@ -72,13 +68,6 @@ class HealthExporter: ObservableObject {
         }
         userDefaults.set(totalRecords, forKey: totalRecordsKey)
 
-        // Save location bookmark
-        if let url = saveLocationURL {
-            if let bookmarkData = try? url.bookmarkData(options: .minimalBookmark) {
-                userDefaults.set(bookmarkData, forKey: saveLocationKey)
-            }
-        }
-
         // Notify other instances that sync state has changed
         NotificationCenter.default.post(
             name: HealthExporter.syncStateDidChangeNotification,
@@ -86,22 +75,19 @@ class HealthExporter: ObservableObject {
         )
     }
     
-    func setSaveLocation(_ url: URL) {
-        saveLocationURL = url
-        saveSyncState()
-    }
-    
     func clearAllData() {
         lastSyncDate = nil
         totalRecords = 0
-        lastExportedFileURL = nil
         exportProgress = 0.0
         exportProgressText = ""
         
         userDefaults.removeObject(forKey: lastSyncKey)
         userDefaults.removeObject(forKey: totalRecordsKey)
         
-        print("✓ All sync data cleared")
+        // Unpair the device
+        apiClient.unpairDevice()
+        
+        print("✓ All sync data cleared and device unpaired")
     }
     
     // MARK: - HealthKit Authorization
@@ -139,29 +125,30 @@ class HealthExporter: ObservableObject {
         
         do {
             // Export all data from the beginning of time
-            let records = try await exportAllRecords()
-            let workouts = try await exportAllWorkouts()
+            let hkRecords = try await exportAllRecords()
+            let hkWorkouts = try await exportAllWorkouts()
             
-            // Create export data structure
-            let exportData = HealthExportData(
-                exportDate: Date(),
-                device: await UIDevice.current.name,
-                records: records,
-                workouts: workouts
+            // Transform to API format
+            let apiRecords = transformRecordsToAPIFormat(hkRecords)
+            let apiWorkouts = transformWorkoutsToAPIFormat(hkWorkouts)
+            
+            // Upload in chunks to handle large datasets
+            let uploadedCounts = try await uploadInChunks(
+                records: apiRecords,
+                workouts: apiWorkouts
             )
-            
-            // Write to local storage
-            let fileURL = try await writeToiCloud(exportData: exportData, isFullExport: true)
             
             // Update sync state
             lastSyncDate = Date()
-            totalRecords = records.count + workouts.count
-            lastExportedFileURL = fileURL
+            totalRecords = uploadedCounts.recordsImported + uploadedCounts.workoutsImported
             saveSyncState()
             
-            print("✓ Full export completed: \(fileURL.path)")
-            print("✓ Exported \(records.count) records and \(workouts.count) workouts")
-            print("✓ File location: \(fileURL.absoluteString)")
+            print("✓ Full export completed via API")
+            print("✓ Uploaded \(apiRecords.count) records + \(apiWorkouts.count) workouts")
+            print("✓ Imported \(uploadedCounts.recordsImported) records + \(uploadedCounts.workoutsImported) workouts")
+            if uploadedCounts.recordsSkipped > 0 || uploadedCounts.workoutsSkipped > 0 {
+                print("  ℹ️ Skipped \(uploadedCounts.recordsSkipped) duplicate records + \(uploadedCounts.workoutsSkipped) duplicate workouts")
+            }
         } catch {
             errorMessage = error.localizedDescription
             print("✗ Export failed: \(error)")
@@ -189,34 +176,95 @@ class HealthExporter: ObservableObject {
             }
             
             // Export only new data since last sync
-            let records = try await exportAllRecords(since: sinceDate)
-            let workouts = try await exportAllWorkouts(since: sinceDate)
+            let hkRecords = try await exportAllRecords(since: sinceDate)
+            let hkWorkouts = try await exportAllWorkouts(since: sinceDate)
             
-            // Create export data structure
-            let exportData = HealthExportData(
-                exportDate: Date(),
-                device: await UIDevice.current.name,
-                records: records,
-                workouts: workouts
+            // Transform to API format
+            let apiRecords = transformRecordsToAPIFormat(hkRecords)
+            let apiWorkouts = transformWorkoutsToAPIFormat(hkWorkouts)
+            
+            // Upload in chunks to handle large datasets
+            let uploadedCounts = try await uploadInChunks(
+                records: apiRecords,
+                workouts: apiWorkouts
             )
-            
-            // Write to local storage
-            let fileURL = try await writeToiCloud(exportData: exportData, isFullExport: false)
             
             // Update sync state
             lastSyncDate = Date()
-            totalRecords += records.count + workouts.count
-            lastExportedFileURL = fileURL
+            totalRecords += uploadedCounts.recordsImported + uploadedCounts.workoutsImported
             saveSyncState()
             
-            print("✓ Incremental sync completed: \(fileURL.path)")
-            print("✓ Exported \(records.count) new records and \(workouts.count) new workouts since \(sinceDate)")
-            print("✓ File location: \(fileURL.absoluteString)")
+            print("✓ Incremental sync completed via API")
+            print("✓ Uploaded \(apiRecords.count) new records + \(apiWorkouts.count) new workouts since \(sinceDate)")
+            print("✓ Imported \(uploadedCounts.recordsImported) records + \(uploadedCounts.workoutsImported) workouts")
+            if uploadedCounts.recordsSkipped > 0 || uploadedCounts.workoutsSkipped > 0 {
+                print("  ℹ️ Skipped \(uploadedCounts.recordsSkipped) duplicate records + \(uploadedCounts.workoutsSkipped) duplicate workouts")
+            }
         } catch {
             errorMessage = error.localizedDescription
             print("✗ Sync failed: \(error)")
             throw error
         }
+    }
+    
+    // MARK: - Chunked Upload
+    
+    private struct UploadCounts {
+        var recordsImported: Int = 0
+        var recordsSkipped: Int = 0
+        var workoutsImported: Int = 0
+        var workoutsSkipped: Int = 0
+    }
+    
+    /// Upload data in chunks to avoid memory issues with large datasets
+    private func uploadInChunks(
+        records: [APIHealthRecord],
+        workouts: [APIWorkoutRecord]
+    ) async throws -> UploadCounts {
+        let chunkSize = 10_000
+        var counts = UploadCounts()
+        
+        let totalRecords = records.count
+        let totalWorkouts = workouts.count
+        let recordChunks = stride(from: 0, to: totalRecords, by: chunkSize).map {
+            Array(records[$0..<min($0 + chunkSize, totalRecords)])
+        }
+        let workoutChunks = stride(from: 0, to: totalWorkouts, by: chunkSize).map {
+            Array(workouts[$0..<min($0 + chunkSize, totalWorkouts)])
+        }
+        
+        let totalChunks = max(recordChunks.count, workoutChunks.count)
+        
+        print("📦 Uploading data in \(totalChunks) chunk(s) (\(chunkSize) items per chunk)")
+        print("   Records: \(totalRecords) in \(recordChunks.count) chunk(s)")
+        print("   Workouts: \(totalWorkouts) in \(workoutChunks.count) chunk(s)")
+        
+        for chunkIndex in 0..<totalChunks {
+            let recordChunk = chunkIndex < recordChunks.count ? recordChunks[chunkIndex] : []
+            let workoutChunk = chunkIndex < workoutChunks.count ? workoutChunks[chunkIndex] : []
+            
+            exportProgressText = "Uploading chunk \(chunkIndex + 1) of \(totalChunks)..."
+            exportProgress = 0.9 + (0.1 * Double(chunkIndex) / Double(totalChunks))
+            
+            print("📤 Uploading chunk \(chunkIndex + 1)/\(totalChunks): \(recordChunk.count) records + \(workoutChunk.count) workouts")
+            
+            let response = try await apiClient.uploadHealthData(
+                records: recordChunk,
+                workouts: workoutChunk
+            )
+            
+            counts.recordsImported += response.records.imported
+            counts.recordsSkipped += response.records.skipped_duplicate
+            counts.workoutsImported += response.workouts.imported
+            counts.workoutsSkipped += response.workouts.skipped_duplicate
+            
+            print("   ✓ Chunk \(chunkIndex + 1) imported: \(response.records.imported) records + \(response.workouts.imported) workouts")
+        }
+        
+        exportProgressText = "Upload complete"
+        exportProgress = 1.0
+        
+        return counts
     }
     
     // MARK: - Data Export
@@ -457,98 +505,44 @@ class HealthExporter: ObservableObject {
         }
     }
     
-    // MARK: - Storage Export
+    // MARK: - API Data Transformation
     
-    func prepareExportData(isFullExport: Bool) async throws -> (Data, String) {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        
-        // Export data
-        let records = try await exportAllRecords(since: isFullExport ? nil : lastSyncDate)
-        let workouts = try await exportAllWorkouts(since: isFullExport ? nil : lastSyncDate)
-        
-        let exportData = HealthExportData(
-            exportDate: Date(),
-            device: await UIDevice.current.name,
-            records: records,
-            workouts: workouts
-        )
-        
-        let jsonData = try encoder.encode(exportData)
-        
-        // Create filename
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-        let dateString = dateFormatter.string(from: Date())
-        
-        let filename = isFullExport
-            ? "health-export-full-\(dateString).json"
-            : "health-export-delta-\(dateString).json"
-        
-        return (jsonData, filename)
+    /// Transform HealthKit records to API format
+    private func transformRecordsToAPIFormat(_ records: [HealthRecord]) -> [APIHealthRecord] {
+        return records.map { record in
+            APIHealthRecord(
+                type: record.type,
+                sourceName: record.source,
+                sourceVersion: nil, // Not available in HealthRecord model
+                device: nil, // Not available in HealthRecord model
+                unit: record.unit,
+                value: record.value,
+                startDate: apiDateFormatter.string(from: record.startDate),
+                endDate: apiDateFormatter.string(from: record.endDate),
+                creationDate: nil // Not tracked in current model
+            )
+        }
     }
     
-    private func writeToiCloud(exportData: HealthExportData, isFullExport: Bool) async throws -> URL {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-
-        let jsonData = try encoder.encode(exportData)
-
-        // Create filename
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-        let dateString = dateFormatter.string(from: Date())
-
-        let filename = isFullExport
-            ? "health-export-full-\(dateString).json"
-            : "health-export-delta-\(dateString).json"
-
-        // Use custom save location if set, otherwise use default
-        let fileURL: URL
-        if let customLocation = saveLocationURL {
-            // User selected a specific folder - write directly to it
-            fileURL = customLocation.appendingPathComponent(filename)
-            print("✓ Using custom save location: \(customLocation.path)")
-
-            // Access the security-scoped resource
-            let accessing = customLocation.startAccessingSecurityScopedResource()
-            defer {
-                if accessing {
-                    customLocation.stopAccessingSecurityScopedResource()
-                }
-            }
-
-            // Write file
-            try jsonData.write(to: fileURL)
-        } else if let iCloudURL = FileManager.default.url(forUbiquityContainerIdentifier: nil)?
-            .appendingPathComponent("Documents")
-            .appendingPathComponent("HealthExport") {
-            // Create directory if needed for iCloud default location
-            try? FileManager.default.createDirectory(at: iCloudURL, withIntermediateDirectories: true)
-            fileURL = iCloudURL.appendingPathComponent(filename)
-            print("✓ Using iCloud Drive storage")
-
-            // Write file
-            try jsonData.write(to: fileURL)
-        } else {
-            // Fallback to local Documents directory
-            guard let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
-                throw HealthExportError.storageNotAvailable
-            }
-            let exportURL = documentsURL.appendingPathComponent("HealthExport")
-
-            // Create directory if needed
-            try? FileManager.default.createDirectory(at: exportURL, withIntermediateDirectories: true)
-            fileURL = exportURL.appendingPathComponent(filename)
-            print("⚠️ Using local storage")
-
-            // Write file
-            try jsonData.write(to: fileURL)
+    /// Transform HealthKit workouts to API format
+    private func transformWorkoutsToAPIFormat(_ workouts: [WorkoutRecord]) -> [APIWorkoutRecord] {
+        return workouts.map { workout in
+            APIWorkoutRecord(
+                workoutType: workout.type,
+                sourceName: workout.source,
+                sourceVersion: nil, // Not available in WorkoutRecord model
+                device: nil, // Not available in WorkoutRecord model
+                duration: workout.durationMinutes,
+                durationUnit: "min",
+                totalDistance: workout.distanceMiles,
+                totalDistanceUnit: "mi",
+                totalEnergy: workout.calories,
+                totalEnergyUnit: "kcal",
+                startDate: apiDateFormatter.string(from: workout.startDate),
+                endDate: apiDateFormatter.string(from: workout.endDate),
+                creationDate: nil // Not tracked in current model
+            )
         }
-
-        return fileURL
     }
 }
 

@@ -9,7 +9,6 @@
 /* Begin PBXBuildFile section */
 		AFFAB4042F3D0CBA00F4495A /* SETUP.md in Resources */ = {isa = PBXBuildFile; fileRef = AFFAB4032F3D0CBA00F4495A /* SETUP.md */; };
 		AFFAB4092F3D114E00F4495A /* QUICK_START.md in Resources */ = {isa = PBXBuildFile; fileRef = AFFAB4082F3D114D00F4495A /* QUICK_START.md */; };
-		AFFAB4112F3D1F8A00F4495A /* SHORTCUTS_GUIDE.md in Resources */ = {isa = PBXBuildFile; fileRef = AFFAB4102F3D1F8A00F4495A /* SHORTCUTS_GUIDE.md */; };
 		AFFAB41F2F3D222D00F4495A /* SCHEDULING_GUIDE.md in Resources */ = {isa = PBXBuildFile; fileRef = AFFAB41E2F3D222D00F4495A /* SCHEDULING_GUIDE.md */; };
 		AFFAB4232F3D246600F4495A /* FILE_ACCESS_GUIDE.md in Resources */ = {isa = PBXBuildFile; fileRef = AFFAB4222F3D246600F4495A /* FILE_ACCESS_GUIDE.md */; };
 		AFFAB4252F3D26FB00F4495A /* PROJECT_SUMMARY.md in Resources */ = {isa = PBXBuildFile; fileRef = AFFAB4242F3D26FB00F4495A /* PROJECT_SUMMARY.md */; };
@@ -39,7 +38,6 @@
 		AFFAB3EA2F3D094800F4495A /* Health Dashboard ExportUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Health Dashboard ExportUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		AFFAB4032F3D0CBA00F4495A /* SETUP.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = SETUP.md; sourceTree = "<group>"; };
 		AFFAB4082F3D114D00F4495A /* QUICK_START.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = QUICK_START.md; sourceTree = "<group>"; };
-		AFFAB4102F3D1F8A00F4495A /* SHORTCUTS_GUIDE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = SHORTCUTS_GUIDE.md; sourceTree = "<group>"; };
 		AFFAB41E2F3D222D00F4495A /* SCHEDULING_GUIDE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = SCHEDULING_GUIDE.md; sourceTree = "<group>"; };
 		AFFAB4222F3D246600F4495A /* FILE_ACCESS_GUIDE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = FILE_ACCESS_GUIDE.md; sourceTree = "<group>"; };
 		AFFAB4242F3D26FB00F4495A /* PROJECT_SUMMARY.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = PROJECT_SUMMARY.md; sourceTree = "<group>"; };
@@ -98,7 +96,6 @@
 				AFFAB3CF2F3D094600F4495A /* Products */,
 				AFFAB4032F3D0CBA00F4495A /* SETUP.md */,
 				AFFAB4082F3D114D00F4495A /* QUICK_START.md */,
-				AFFAB4102F3D1F8A00F4495A /* SHORTCUTS_GUIDE.md */,
 				AFFAB41E2F3D222D00F4495A /* SCHEDULING_GUIDE.md */,
 				AFFAB4222F3D246600F4495A /* FILE_ACCESS_GUIDE.md */,
 				AFFAB4242F3D26FB00F4495A /* PROJECT_SUMMARY.md */,
@@ -239,7 +236,6 @@
 				AFFAB4252F3D26FB00F4495A /* PROJECT_SUMMARY.md in Resources */,
 				AFFAB4042F3D0CBA00F4495A /* SETUP.md in Resources */,
 				AFFAB4232F3D246600F4495A /* FILE_ACCESS_GUIDE.md in Resources */,
-				AFFAB4112F3D1F8A00F4495A /* SHORTCUTS_GUIDE.md in Resources */,
 				AFFAB41F2F3D222D00F4495A /* SCHEDULING_GUIDE.md in Resources */,
 				AFFAB4272F3D288B00F4495A /* RECENT_UPDATES.md in Resources */,
 				AFFAB4092F3D114E00F4495A /* QUICK_START.md in Resources */,

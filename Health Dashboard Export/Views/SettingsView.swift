@@ -6,15 +6,15 @@
 //
 
 import SwiftUI
-import AppIntents
-import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @ObservedObject var exporter: HealthExporter
     @Environment(\.dismiss) private var dismiss
     @State private var showingClearDataAlert = false
-    @State private var showingShortcutsGuide = false
-    @State private var showingLocationPicker = false
+    @State private var showingAPISettings = false
+    @State private var showingRepairAlert = false
+    
+    private let apiClient = APIClient.shared
 
     var body: some View {
         NavigationStack {
@@ -33,29 +33,22 @@ struct SettingsView: View {
                         Text(formatNumber(exporter.totalRecords))
                             .foregroundColor(.secondary)
                     }
-
-                    if let fileURL = exporter.lastExportedFileURL {
-                        HStack {
-                            Text("Last Export File")
-                            Spacer()
-                            Text(fileURL.lastPathComponent)
-                                .foregroundColor(.secondary)
-                                .font(.caption)
-                                .lineLimit(1)
-                        }
-                    }
-
+                } header: {
+                    Text("Sync Status")
+                }
+                
+                Section {
                     Button(action: {
-                        showingLocationPicker = true
+                        showingAPISettings = true
                     }) {
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("Save Location")
+                                Text("API Server")
                                     .foregroundColor(.primary)
-                                Text(getSaveLocationDescription())
+                                Text(apiClient.baseURL)
                                     .foregroundColor(.secondary)
                                     .font(.caption)
-                                    .lineLimit(2)
+                                    .lineLimit(1)
                             }
                             Spacer()
                             Image(systemName: "chevron.right")
@@ -63,8 +56,34 @@ struct SettingsView: View {
                                 .font(.caption)
                         }
                     }
+                    
+                    HStack {
+                        Text("Device Paired")
+                        Spacer()
+                        if apiClient.isPaired {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                        } else {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.red)
+                        }
+                    }
+                    
+                    if apiClient.isPaired {
+                        Button(action: {
+                            showingRepairAlert = true
+                        }) {
+                            HStack {
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                                Text("Re-pair Device")
+                            }
+                            .foregroundColor(.orange)
+                        }
+                    }
                 } header: {
-                    Text("Export Status")
+                    Text("API Configuration")
+                } footer: {
+                    Text("Configure the API server endpoint for syncing your health data.")
                 }
 
                 Section {
@@ -74,31 +93,10 @@ struct SettingsView: View {
                             Text("Scheduled Syncs")
                         }
                     }
-
-                    NavigationLink(destination: ShortcutsGuideView()) {
-                        HStack {
-                            Image(systemName: "link.badge.plus")
-                            Text("Shortcuts Guide")
-                        }
-                    }
-
-                    AddToSiriButton(intent: SyncNowIntent()) {
-                        HStack {
-                            Image(systemName: "waveform.circle.fill")
-                            Text("Add Sync to Siri")
-                        }
-                    }
-
-                    AddToSiriButton(intent: FullExportIntent()) {
-                        HStack {
-                            Image(systemName: "waveform.circle.fill")
-                            Text("Add Full Export to Siri")
-                        }
-                    }
                 } header: {
-                    Text("Shortcuts & Automation")
+                    Text("Scheduled Sync")
                 } footer: {
-                    Text("Add shortcuts to Siri for voice control, or use with the Shortcuts app for automation.")
+                    Text("Configure automatic syncs to run at regular intervals.")
                 }
 
                 Section {
@@ -120,7 +118,7 @@ struct SettingsView: View {
                     HStack {
                         Text("Version")
                         Spacer()
-                        Text("1.0.0")
+                        Text("1.1.0")
                             .foregroundColor(.secondary)
                     }
                 } header: {
@@ -145,10 +143,16 @@ struct SettingsView: View {
             } message: {
                 Text("This will reset your sync history and remove all cached export information. This cannot be undone.")
             }
-            .sheet(isPresented: $showingLocationPicker) {
-                DocumentPicker(onSelect: { url in
-                    exporter.setSaveLocation(url)
-                })
+            .sheet(isPresented: $showingAPISettings) {
+                APISettingsView()
+            }
+            .alert("Re-pair Device?", isPresented: $showingRepairAlert) {
+                Button("Cancel", role: .cancel) {}
+                Button("Re-pair", role: .destructive) {
+                    apiClient.unpairDevice()
+                }
+            } message: {
+                Text("This will unpair your device. You'll need to enter a new pairing code.")
             }
         }
     }
@@ -157,26 +161,6 @@ struct SettingsView: View {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
         return formatter.string(from: NSNumber(value: number)) ?? "\(number)"
-    }
-
-    private func getSaveLocationDescription() -> String {
-        if let saveURL = exporter.saveLocationURL {
-            let components = saveURL.pathComponents
-            // Try to find a meaningful parent directory name
-            if components.count >= 2 {
-                let parent = components[components.count - 2]
-                let folder = saveURL.lastPathComponent
-                return "\(parent)/\(folder)"
-            }
-            return saveURL.lastPathComponent
-        } else {
-            // Fallback location description
-            if FileManager.default.ubiquityIdentityToken != nil {
-                return "iCloud Drive/Health Export/"
-            } else {
-                return "On My iPhone/Documents/Health Export/"
-            }
-        }
     }
 }
 
