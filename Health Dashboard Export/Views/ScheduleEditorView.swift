@@ -16,7 +16,6 @@ struct ScheduleEditorView: View {
     let scheduleToEdit: SyncSchedule?
 
     @State private var name: String
-    @State private var syncType: SyncType
     @State private var frequency: ScheduleFrequency
     @State private var time: Date
     @State private var isEnabled: Bool
@@ -27,7 +26,6 @@ struct ScheduleEditorView: View {
         self.scheduleToEdit = scheduleToEdit
 
         _name = State(initialValue: scheduleToEdit?.name ?? "")
-        _syncType = State(initialValue: scheduleToEdit?.syncType ?? .incremental)
         _frequency = State(initialValue: scheduleToEdit?.frequency ?? .daily)
         _time = State(initialValue: scheduleToEdit?.time ?? Date())
         _isEnabled = State(initialValue: scheduleToEdit?.isEnabled ?? true)
@@ -43,21 +41,6 @@ struct ScheduleEditorView: View {
                     Toggle("Enabled", isOn: $isEnabled)
                 } header: {
                     Text("Basic Info")
-                }
-                
-                Section {
-                    Picker("Sync Type", selection: $syncType) {
-                        ForEach(SyncType.allCases, id: \.self) { type in
-                            Label(type.rawValue, systemImage: type.icon)
-                                .tag(type)
-                        }
-                    }
-                    
-                    Text(syncType.description)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                } header: {
-                    Text("Export Type")
                 }
                 
                 Section {
@@ -160,7 +143,7 @@ struct ScheduleEditorView: View {
                 id: existingSchedule.id,
                 name: name,
                 isEnabled: isEnabled,
-                syncType: syncType,
+                syncType: .incremental,
                 frequency: frequency,
                 time: time
             )
@@ -170,7 +153,7 @@ struct ScheduleEditorView: View {
             let newSchedule = SyncSchedule(
                 name: name,
                 isEnabled: isEnabled,
-                syncType: syncType,
+                syncType: .incremental,
                 frequency: frequency,
                 time: time
             )

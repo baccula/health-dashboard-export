@@ -13,6 +13,8 @@ struct SettingsView: View {
     @State private var showingClearDataAlert = false
     @State private var showingAPISettings = false
     @State private var showingRepairAlert = false
+    @State private var showingSuccess = false
+    @State private var successMessage = ""
     
     private let apiClient = APIClient.shared
 
@@ -33,8 +35,34 @@ struct SettingsView: View {
                         Text(formatNumber(exporter.totalRecords))
                             .foregroundColor(.secondary)
                     }
+                    
+                    Button(action: {
+                        Task {
+                            await performSync()
+                        }
+                    }) {
+                        HStack {
+                            Image(systemName: "arrow.clockwise.circle.fill")
+                            Text("Sync Now")
+                        }
+                        .foregroundColor(exporter.isExporting ? .secondary : .blue)
+                    }
+                    .disabled(exporter.isExporting || !exporter.isAuthorized)
+                    
+                    if exporter.isExporting {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(exporter.exportProgressText)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            
+                            ProgressView(value: exporter.exportProgress)
+                                .progressViewStyle(.linear)
+                        }
+                    }
                 } header: {
                     Text("Sync Status")
+                } footer: {
+                    Text("Use this to manually sync when needed. Normally, your scheduled sync will run automatically.")
                 }
                 
                 Section {
@@ -84,19 +112,6 @@ struct SettingsView: View {
                     Text("API Configuration")
                 } footer: {
                     Text("Configure the API server endpoint for syncing your health data.")
-                }
-
-                Section {
-                    NavigationLink(destination: ScheduleManagerView(exporter: exporter)) {
-                        HStack {
-                            Image(systemName: "calendar.badge.clock")
-                            Text("Scheduled Syncs")
-                        }
-                    }
-                } header: {
-                    Text("Scheduled Sync")
-                } footer: {
-                    Text("Configure automatic syncs to run at regular intervals.")
                 }
 
                 Section {
@@ -154,6 +169,28 @@ struct SettingsView: View {
             } message: {
                 Text("This will unpair your device. You'll need to enter a new pairing code.")
             }
+            .alert("Success", isPresented: $showingSuccess) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(successMessage)
+            }
+        }
+    }
+    
+    private func performSync() async {
+        do {
+            let recordsBefore = exporter.totalRecords
+            try await exporter.performIncrementalSync()
+            let newRecords = exporter.totalRecords - recordsBefore
+
+            if newRecords > 0 {
+                successMessage = "Sync completed! \(formatNumber(newRecords)) new records uploaded."
+            } else {
+                successMessage = "Sync completed! No new data since last sync."
+            }
+            showingSuccess = true
+        } catch {
+            print("Sync error: \(error)")
         }
     }
 

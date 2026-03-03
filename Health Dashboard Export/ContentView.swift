@@ -10,12 +10,13 @@ import UniformTypeIdentifiers
 
 struct ContentView: View {
     @StateObject private var exporter = HealthExporter()
+    @EnvironmentObject var scheduleManager: ScheduleManager
     @State private var showingError = false
     @State private var showingAuthorizationPrompt = false
-    @State private var showingSuccess = false
-    @State private var successMessage = ""
     @State private var showingSettings = false
     @State private var showingOnboarding = false
+    @State private var showingScheduleEditor = false
+    @State private var scheduleToEdit: SyncSchedule?
     
     private let apiClient = APIClient.shared
     
@@ -66,55 +67,61 @@ struct ContentView: View {
                 
                 Spacer()
                 
-                // Action Buttons
+                // Scheduled Sync Section
                 VStack(spacing: 16) {
-                    Button(action: {
-                        Task {
-                            await performSync()
-                        }
-                    }) {
-                        VStack(spacing: 4) {
-                            HStack {
-                                Image(systemName: "arrow.clockwise.circle.fill")
-                                Text("Sync Now")
-                            }
-                            .font(.headline)
+                    if scheduleManager.schedules.isEmpty {
+                        // No schedules - show create button
+                        VStack(spacing: 12) {
+                            Image(systemName: "calendar.badge.clock")
+                                .font(.system(size: 40))
+                                .foregroundColor(.secondary)
                             
-                            Text(exporter.lastSyncDate != nil ? "Export new data only" : "First sync - will export all")
-                                .font(.caption)
-                                .opacity(0.8)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue)
-                        .foregroundColor(.white)
-                        .cornerRadius(12)
-                    }
-                    .disabled(exporter.isExporting || !exporter.isAuthorized)
-                    
-                    Button(action: {
-                        Task {
-                            await performFullExport()
-                        }
-                    }) {
-                        VStack(spacing: 4) {
-                            HStack {
-                                Image(systemName: "square.and.arrow.down.fill")
-                                Text("Full Export")
-                            }
-                            .font(.headline)
+                            Text("No Scheduled Sync")
+                                .font(.headline)
                             
-                            Text("Export all historical data")
-                                .font(.caption)
-                                .opacity(0.8)
+                            Text("Create a schedule to automatically sync your health data")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                            
+                            Button(action: {
+                                showingScheduleEditor = true
+                            }) {
+                                HStack {
+                                    Image(systemName: "plus.circle.fill")
+                                    Text("Create Schedule")
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.blue)
+                                .foregroundColor(.white)
+                                .cornerRadius(12)
+                                .font(.headline)
+                            }
+                            .disabled(!exporter.isAuthorized)
                         }
-                        .frame(maxWidth: .infinity)
                         .padding()
-                        .background(Color.green)
-                        .foregroundColor(.white)
-                        .cornerRadius(12)
+                    } else {
+                        // Show active schedules
+                        VStack(spacing: 12) {
+                            ForEach(scheduleManager.schedules.prefix(3)) { schedule in
+                                ScheduleCardView(schedule: schedule, scheduleManager: scheduleManager)
+                                    .onTapGesture {
+                                        scheduleToEdit = schedule
+                                    }
+                            }
+                            
+                            if scheduleManager.schedules.count > 3 {
+                                Button(action: {
+                                    showingSettings = true
+                                }) {
+                                    Text("View All Schedules")
+                                        .font(.subheadline)
+                                        .foregroundColor(.blue)
+                                }
+                            }
+                        }
                     }
-                    .disabled(exporter.isExporting || !exporter.isAuthorized)
                     
                     if !exporter.isAuthorized {
                         Button(action: {
@@ -158,11 +165,6 @@ struct ContentView: View {
         } message: {
             Text(exporter.errorMessage ?? "An unknown error occurred")
         }
-        .alert("Success", isPresented: $showingSuccess) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(successMessage)
-        }
         .task {
             checkPairingStatus()
             // Only request auth if already paired (returning user)
@@ -182,6 +184,12 @@ struct ContentView: View {
         .fullScreenCover(isPresented: $showingOnboarding) {
             OnboardingView(isOnboardingComplete: $showingOnboarding)
         }
+        .sheet(isPresented: $showingScheduleEditor) {
+            ScheduleEditorView(scheduleManager: scheduleManager, exporter: exporter)
+        }
+        .sheet(item: $scheduleToEdit) { schedule in
+            ScheduleEditorView(scheduleManager: scheduleManager, exporter: exporter, scheduleToEdit: schedule)
+        }
     }
     
     // MARK: - Pairing
@@ -197,33 +205,6 @@ struct ContentView: View {
             try await exporter.requestAuthorization()
         } catch {
             print("Authorization error: \(error)")
-        }
-    }
-    
-    private func performSync() async {
-        do {
-            let recordsBefore = exporter.totalRecords
-            try await exporter.performIncrementalSync()
-            let newRecords = exporter.totalRecords - recordsBefore
-
-            if newRecords > 0 {
-                successMessage = "Sync completed! \(formatNumber(newRecords)) new records uploaded to dashboard."
-            } else {
-                successMessage = "Sync completed! No new data since last sync."
-            }
-            showingSuccess = true
-        } catch {
-            print("Sync error: \(error)")
-        }
-    }
-
-    private func performFullExport() async {
-        do {
-            try await exporter.performFullExport()
-            successMessage = "Full export completed! \(formatNumber(exporter.totalRecords)) total records uploaded to dashboard."
-            showingSuccess = true
-        } catch {
-            print("Export error: \(error)")
         }
     }
     
@@ -255,6 +236,54 @@ struct StatusRow: View {
     }
 }
 
+struct ScheduleCardView: View {
+    let schedule: SyncSchedule
+    @ObservedObject var scheduleManager: ScheduleManager
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            // Icon
+            Image(systemName: schedule.syncType.icon)
+                .font(.title2)
+                .foregroundColor(schedule.isEnabled ? .blue : .gray)
+                .frame(width: 30)
+            
+            // Info
+            VStack(alignment: .leading, spacing: 4) {
+                Text(schedule.name)
+                    .font(.headline)
+                    .foregroundColor(schedule.isEnabled ? .primary : .secondary)
+                
+                HStack(spacing: 12) {
+                    Label(schedule.frequency.rawValue, systemImage: schedule.frequency.icon)
+                    
+                    if let nextRun = schedule.nextRun {
+                        HStack(spacing: 4) {
+                            Image(systemName: "clock")
+                            Text(nextRun, style: .relative)
+                        }
+                    }
+                }
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+            
+            // Toggle
+            Toggle("", isOn: Binding(
+                get: { schedule.isEnabled },
+                set: { _ in scheduleManager.toggleSchedule(schedule) }
+            ))
+            .labelsHidden()
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+}
+
 #Preview {
     ContentView()
+        .environmentObject(ScheduleManager())
 }
