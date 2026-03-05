@@ -17,7 +17,6 @@ struct SyncSchedule: Identifiable, Codable {
     var frequency: ScheduleFrequency
     var time: Date  // Time of day to run
     var lastRun: Date?
-    var nextRun: Date?
     
     init(
         id: UUID = UUID(),
@@ -34,7 +33,6 @@ struct SyncSchedule: Identifiable, Codable {
         self.frequency = frequency
         self.time = time
         self.lastRun = nil
-        self.nextRun = frequency.calculateNextRun(from: Date(), at: time)
     }
 }
 

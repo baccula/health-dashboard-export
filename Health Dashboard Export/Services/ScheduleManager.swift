@@ -31,7 +31,7 @@ class ScheduleManager: ObservableObject {
         self.nowProvider = nowProvider
         loadSchedules()
         registerBackgroundTasks()
-        updateOverdueSchedules()
+        normalizeSchedules()
         if shouldManageBackgroundTasks, !schedules.isEmpty {
             scheduleBackgroundTask()
         }
@@ -89,38 +89,38 @@ class ScheduleManager: ObservableObject {
         userDefaults.set(encoded, forKey: schedulesKey)
     }
 
-    /// Updates schedules whose nextRun time has passed without executing
-    /// This prevents the timer from counting up when app is reopened after scheduled time
-    private func updateOverdueSchedules() {
-        let now = nowProvider()
-        var needsSave = false
+    /// Triggers a refresh so next-run calculations reflect the current time.
+    func normalizeSchedules(now: Date? = nil) {
+        _ = now ?? nowProvider()
+        objectWillChange.send()
+    }
 
-        for i in 0..<schedules.count {
-            guard schedules[i].isEnabled else { continue }
-            guard let nextRun = schedules[i].nextRun else { continue }
+    func nextRun(for schedule: SyncSchedule, now: Date? = nil) -> Date? {
+        let now = now ?? nowProvider()
 
-            // If nextRun is in the past, advance it to the next occurrence
-            if nextRun < now {
-                print("⏩ Advancing overdue schedule '\(schedules[i].name)' from \(nextRun)")
-
-                // Keep advancing until we find a future time
-                var updatedNextRun = nextRun
-                while updatedNextRun < now {
-                    updatedNextRun = schedules[i].frequency.calculateNextRunAfter(
-                        date: updatedNextRun,
-                        at: schedules[i].time
-                    )
-                }
-
-                schedules[i].nextRun = updatedNextRun
-                needsSave = true
-                print("   ➡️ New nextRun: \(updatedNextRun)")
-            }
+        guard schedule.isEnabled else {
+            return nil
         }
 
-        if needsSave {
-            saveSchedules()
+        let currentNextRun: Date
+        if let lastRun = schedule.lastRun {
+            currentNextRun = schedule.frequency.calculateNextRunAfter(date: lastRun, at: schedule.time)
+        } else {
+            currentNextRun = schedule.frequency.calculateNextRun(from: now, at: schedule.time)
         }
+        if currentNextRun > now {
+            return currentNextRun
+        }
+
+        var updatedNextRun = currentNextRun
+        while updatedNextRun <= now {
+            updatedNextRun = schedule.frequency.calculateNextRunAfter(
+                date: updatedNextRun,
+                at: schedule.time
+            )
+        }
+
+        return updatedNextRun
     }
     
     // MARK: - Background Task Registration
@@ -141,6 +141,8 @@ class ScheduleManager: ObservableObject {
     private func scheduleBackgroundTask() {
         guard shouldManageBackgroundTasks else { return }
 
+        normalizeSchedules()
+
         // Cancel existing tasks
         BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: backgroundTaskIdentifier)
         
@@ -150,7 +152,7 @@ class ScheduleManager: ObservableObject {
             return
         }
         
-        guard let nextRun = nextSchedule.nextRun else {
+        guard let nextRun = nextRun(for: nextSchedule) else {
             print("No next run time calculated")
             return
         }
@@ -168,13 +170,18 @@ class ScheduleManager: ObservableObject {
     
     private func getNextSchedule() -> SyncSchedule? {
         let activeSchedules = schedules.filter { $0.isEnabled }
-        return activeSchedules.min(by: { ($0.nextRun ?? Date.distantFuture) < ($1.nextRun ?? Date.distantFuture) })
+        let now = nowProvider()
+        return activeSchedules.min(by: {
+            (nextRun(for: $0, now: now) ?? Date.distantFuture) < (nextRun(for: $1, now: now) ?? Date.distantFuture)
+        })
     }
     
     // MARK: - Background Task Execution
     
     private func handleBackgroundTask(_ task: BGAppRefreshTask) async {
         print("🔔 Background task triggered at \(Date())")
+
+        normalizeSchedules()
 
         // Schedule next background task
         scheduleBackgroundTask()
@@ -193,7 +200,7 @@ class ScheduleManager: ObservableObject {
                 print("⏭️ Skipping disabled schedule: \(schedule.name)")
                 return false
             }
-            guard let nextRun = schedule.nextRun else {
+            guard let nextRun = nextRun(for: schedule, now: now) else {
                 print("⏭️ Skipping schedule with no next run: \(schedule.name)")
                 return false
             }
@@ -242,10 +249,6 @@ class ScheduleManager: ObservableObject {
     private func updateScheduleAfterRun(_ schedule: SyncSchedule) {
         if let index = schedules.firstIndex(where: { $0.id == schedule.id }) {
             schedules[index].lastRun = Date()
-            schedules[index].nextRun = schedule.frequency.calculateNextRunAfter(
-                date: Date(),
-                at: schedule.time
-            )
             saveSchedules()
         }
     }
@@ -312,7 +315,7 @@ class ScheduleManager: ObservableObject {
         print("📋 Active schedules: \(schedules.count)")
 
         for schedule in schedules {
-            if let nextRun = schedule.nextRun {
+            if let nextRun = nextRun(for: schedule, now: now) {
                 let timeUntil = nextRun.timeIntervalSince(now)
                 print("   - '\(schedule.name)': nextRun in \(timeUntil/60) minutes, enabled=\(schedule.isEnabled)")
             } else {
@@ -322,7 +325,7 @@ class ScheduleManager: ObservableObject {
 
         let schedulesToRun = schedules.filter { schedule in
             guard schedule.isEnabled else { return false }
-            guard let nextRun = schedule.nextRun else { return false }
+            guard let nextRun = nextRun(for: schedule, now: now) else { return false }
             return nextRun <= now
         }
 

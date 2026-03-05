@@ -96,8 +96,11 @@ struct ScheduleManagerView: View {
                 InfoRow(label: "Background Refresh", value: "Enabled")
                 InfoRow(label: "Total Schedules", value: "\(scheduleManager.schedules.count)")
                 
-                if let nextSchedule = scheduleManager.schedules.filter({ $0.isEnabled }).min(by: { ($0.nextRun ?? Date.distantFuture) < ($1.nextRun ?? Date.distantFuture) }) {
-                    if let nextRun = nextSchedule.nextRun {
+                let now = Date()
+                if let nextSchedule = scheduleManager.schedules.filter({ $0.isEnabled }).min(by: {
+                    (scheduleManager.nextRun(for: $0, now: now) ?? Date.distantFuture) < (scheduleManager.nextRun(for: $1, now: now) ?? Date.distantFuture)
+                }) {
+                    if let nextRun = scheduleManager.nextRun(for: nextSchedule, now: now) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Next Sync")
                                 .font(.subheadline)
@@ -160,7 +163,7 @@ struct ScheduleRow: View {
                 HStack(spacing: 12) {
                     Label(schedule.frequency.rawValue, systemImage: schedule.frequency.icon)
                     
-                    if let nextRun = schedule.nextRun {
+                    if let nextRun = scheduleManager.nextRun(for: schedule) {
                         Label(nextRun.formatted(date: .abbreviated, time: .shortened), systemImage: "clock")
                     }
                 }
