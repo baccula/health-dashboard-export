@@ -49,6 +49,10 @@ class HealthExporter: ObservableObject {
         )
     }
 
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
     @objc private func handleSyncStateChange() {
         loadSyncState()
     }
