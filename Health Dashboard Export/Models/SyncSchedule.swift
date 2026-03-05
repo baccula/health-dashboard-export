@@ -101,29 +101,34 @@ enum ScheduleFrequency: String, Codable, CaseIterable {
         let calendar = Calendar.current
         let timeComponents = calendar.dateComponents([.hour, .minute], from: time)
         
-        var components = calendar.dateComponents([.year, .month, .day], from: date)
-        components.hour = timeComponents.hour
-        components.minute = timeComponents.minute
-        components.second = 0
+        // Build today's occurrence at the scheduled time.
+        var todayComponents = calendar.dateComponents([.year, .month, .day], from: date)
+        todayComponents.hour = timeComponents.hour
+        todayComponents.minute = timeComponents.minute
+        todayComponents.second = 0
         
-        guard var nextRun = calendar.date(from: components) else {
+        guard let todayOccurrence = calendar.date(from: todayComponents) else {
             return date
         }
         
-        // If the time has already passed today, move to the next occurrence
-        if nextRun <= date {
-            switch self {
-            case .daily:
-                nextRun = calendar.date(byAdding: .day, value: 1, to: nextRun) ?? nextRun
-            case .weekly:
-                nextRun = calendar.date(byAdding: .weekOfYear, value: 1, to: nextRun) ?? nextRun
-            case .biweekly:
-                nextRun = calendar.date(byAdding: .weekOfYear, value: 2, to: nextRun) ?? nextRun
-            case .monthly:
-                nextRun = calendar.date(byAdding: .month, value: 1, to: nextRun) ?? nextRun
-            }
+        // If today's scheduled time is still in the future, run today.
+        if todayOccurrence > date {
+            return todayOccurrence
         }
         
+        // Otherwise, today's scheduled time has passed, so advance by frequency.
+        let nextRun: Date
+        switch self {
+        case .daily:
+            nextRun = calendar.date(byAdding: .day, value: 1, to: todayOccurrence) ?? todayOccurrence
+        case .weekly:
+            nextRun = calendar.date(byAdding: .weekOfYear, value: 1, to: todayOccurrence) ?? todayOccurrence
+        case .biweekly:
+            nextRun = calendar.date(byAdding: .weekOfYear, value: 2, to: todayOccurrence) ?? todayOccurrence
+        case .monthly:
+            nextRun = calendar.date(byAdding: .month, value: 1, to: todayOccurrence) ?? todayOccurrence
+        }
+
         return nextRun
     }
     
