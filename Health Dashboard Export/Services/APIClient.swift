@@ -261,34 +261,6 @@ class APIClient {
         return devicesResponse.devices
     }
     
-    /// Revoke a paired device
-    /// - Parameter deviceId: Device ID to revoke
-    /// - Throws: APIError on failure
-    func revokeDevice(_ deviceId: String) async throws {
-        guard let apiKey = getAPIKey() else {
-            throw APIError.notPaired
-        }
-        
-        let url = URL(string: "\(baseURL)/api/pair/devices/\(deviceId)")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "DELETE"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 30
-        
-        let (_, response) = try await session.data(for: request)
-        let httpResponse = response as! HTTPURLResponse
-        
-        guard httpResponse.statusCode == 200 else {
-            if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
-                try? clearAPIKey()
-                throw APIError.authExpired
-            }
-            throw APIError.requestFailed("Revoke device failed with status \(httpResponse.statusCode)")
-        }
-        
-        print("✓ Device \(deviceId) revoked")
-    }
-    
     // MARK: - Retry Logic
     
     /// Perform a request with exponential backoff retry (max 3 attempts)
