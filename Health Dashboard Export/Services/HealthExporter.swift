@@ -12,6 +12,8 @@ import Combine
 
 protocol HealthUploadClient {
     func uploadHealthData(records: [APIHealthRecord], workouts: [APIWorkoutRecord]) async throws -> UploadResponse
+    func getOrCreateDeviceId() throws -> String
+    func getLatestSyncDates(deviceId: String) async throws -> [String: Date]
     func unpairDevice()
 }
 
@@ -20,7 +22,7 @@ extension APIClient: HealthUploadClient {}
 protocol HealthDataProviding {
     func requestAuthorization() async throws
     func authorizationRequestStatus() async throws -> HKAuthorizationRequestStatus
-    func exportAllRecords(since: Date?) async throws -> [HealthRecord]
+    func exportAllRecords(since: Date?, perTypeSince: [String: Date]) async throws -> [HealthRecord]
     func exportAllWorkouts(since: Date?) async throws -> [WorkoutRecord]
 }
 
@@ -77,7 +79,10 @@ final class HealthKitDataProvider: HealthDataProviding {
         }
     }
 
-    func exportAllRecords(since: Date? = nil) async throws -> [HealthRecord] {
+    func exportAllRecords(
+        since: Date? = nil,
+        perTypeSince: [String: Date] = [:]
+    ) async throws -> [HealthRecord] {
         var allRecords: [HealthRecord] = []
         let types = HealthDataType.quantityTypes
 
@@ -85,7 +90,8 @@ final class HealthKitDataProvider: HealthDataProviding {
             guard case .quantity(let identifier) = type else { continue }
             guard let quantityType = HKQuantityType.quantityType(forIdentifier: identifier) else { continue }
 
-            let records = try await queryQuantitySamples(for: quantityType, since: since)
+            let sinceForType = perTypeSince[identifier.rawValue] ?? since
+            let records = try await queryQuantitySamples(for: quantityType, since: sinceForType)
             allRecords.append(contentsOf: records)
         }
 
@@ -94,7 +100,8 @@ final class HealthKitDataProvider: HealthDataProviding {
             guard case .category(let identifier) = type else { continue }
             guard let categoryType = HKCategoryType.categoryType(forIdentifier: identifier) else { continue }
 
-            let records = try await queryCategorySamples(for: categoryType, since: since)
+            let sinceForType = perTypeSince[identifier.rawValue] ?? since
+            let records = try await queryCategorySamples(for: categoryType, since: sinceForType)
             allRecords.append(contentsOf: records)
         }
 
@@ -404,7 +411,7 @@ class HealthExporter: ObservableObject {
 
         do {
             exportProgressText = "Exporting records..."
-            let hkRecords = try await dataProvider.exportAllRecords(since: nil)
+            let hkRecords = try await dataProvider.exportAllRecords(since: nil, perTypeSince: [:])
 
             exportProgress = 0.9
             exportProgressText = "Exporting workouts..."
@@ -447,18 +454,42 @@ class HealthExporter: ObservableObject {
         }
 
         do {
-            guard let sinceDate = lastSyncDate else {
+            let deviceId = try apiClient.getOrCreateDeviceId()
+            var serverPerTypeSince: [String: Date]?
+
+            do {
+                serverPerTypeSince = try await apiClient.getLatestSyncDates(deviceId: deviceId)
+                let count = serverPerTypeSince?.count ?? 0
+                print("✓ Loaded \(count) server sync timestamp(s) for device \(deviceId)")
+            } catch {
+                print("⚠️ Could not fetch /api/sync/latest, falling back to local lastSyncDate: \(error)")
+            }
+
+            let fallbackSince = lastSyncDate
+            let perTypeSince = serverPerTypeSince ?? [:]
+
+            if serverPerTypeSince == nil && fallbackSince == nil {
                 print("⚠️ No previous sync found, performing full export...")
                 try await performFullExport()
                 return
             }
 
+            if serverPerTypeSince != nil && perTypeSince.isEmpty && fallbackSince == nil {
+                print("⚠️ Server returned no sync timestamps and no local sync exists, performing full export...")
+                try await performFullExport()
+                return
+            }
+
             exportProgressText = "Exporting records..."
-            let hkRecords = try await dataProvider.exportAllRecords(since: sinceDate)
+            let hkRecords = try await dataProvider.exportAllRecords(
+                since: fallbackSince,
+                perTypeSince: perTypeSince
+            )
 
             exportProgress = 0.9
             exportProgressText = "Exporting workouts..."
-            let hkWorkouts = try await dataProvider.exportAllWorkouts(since: sinceDate)
+            let workoutSince = perTypeSince[HealthDataType.workout.name] ?? fallbackSince
+            let hkWorkouts = try await dataProvider.exportAllWorkouts(since: workoutSince)
 
             let apiRecords = transformRecordsToAPIFormat(hkRecords)
             let apiWorkouts = transformWorkoutsToAPIFormat(hkWorkouts)
@@ -473,7 +504,7 @@ class HealthExporter: ObservableObject {
             saveSyncState()
 
             print("✓ Incremental sync completed via API")
-            print("✓ Uploaded \(apiRecords.count) new records + \(apiWorkouts.count) new workouts since \(sinceDate)")
+            print("✓ Uploaded \(apiRecords.count) new records + \(apiWorkouts.count) new workouts")
             print("✓ Imported \(uploadedCounts.recordsImported) records (combined)")
             if uploadedCounts.recordsSkipped > 0 {
                 print("  ℹ️ Skipped \(uploadedCounts.recordsSkipped) duplicates (combined)")

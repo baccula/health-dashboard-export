@@ -176,10 +176,113 @@ final class HealthExporterTests: XCTestCase {
         try await exporter.performIncrementalSync()
 
         XCTAssertEqual(provider.recordsSinceDates, [lastSync])
+        XCTAssertEqual(provider.recordsPerTypeSince, [[:]])
         XCTAssertEqual(provider.workoutsSinceDates, [lastSync])
         XCTAssertEqual(uploadClient.uploadCalls.count, 1)
         XCTAssertEqual(uploadClient.uploadCalls[0].records.count, 1)
         XCTAssertEqual(uploadClient.uploadCalls[0].workouts.count, 1)
+    }
+
+    @MainActor
+    func testIncrementalSyncUsesServerPerTypeTimestampsWhenAvailable() async throws {
+        let localLastSync = makeUTCDate(2026, 3, 3, 12, 0)
+        let serverHeartRateSince = makeUTCDate(2026, 3, 4, 8, 0)
+        let serverWorkoutSince = makeUTCDate(2026, 3, 4, 9, 0)
+        userDefaults.set(localLastSync, forKey: "lastSyncDate")
+
+        let provider = MockHealthDataProvider()
+        provider.recordsForIncrementalExport = [
+            HealthRecord(type: "HKQuantityTypeIdentifierHeartRate", startDate: makeUTCDate(2026, 3, 4, 10, 0), endDate: makeUTCDate(2026, 3, 4, 10, 1), value: 75, unit: "count/min", source: "Watch")
+        ]
+        provider.workoutsForIncrementalExport = [
+            WorkoutRecord(type: "HKWorkoutActivityTypeRunning", startDate: makeUTCDate(2026, 3, 4, 10, 0), endDate: makeUTCDate(2026, 3, 4, 10, 30), durationMinutes: 30, distanceMiles: 3, calories: 250, source: "Watch")
+        ]
+
+        let uploadClient = MockUploadClient()
+        uploadClient.latestSyncDates = [
+            "HKQuantityTypeIdentifierHeartRate": serverHeartRateSince,
+            "HKWorkout": serverWorkoutSince
+        ]
+        uploadClient.responses = [UploadResponse(inserted: 2, skipped: 0, errors: [])]
+
+        let exporter = HealthExporter(
+            apiClient: uploadClient,
+            dataProvider: provider,
+            userDefaults: userDefaults
+        )
+
+        try await exporter.performIncrementalSync()
+
+        XCTAssertEqual(uploadClient.requestedLatestSyncDeviceIds, ["test-device-id"])
+        XCTAssertEqual(provider.recordsSinceDates, [localLastSync])
+        XCTAssertEqual(provider.recordsPerTypeSince.count, 1)
+        XCTAssertEqual(provider.recordsPerTypeSince[0]["HKQuantityTypeIdentifierHeartRate"], serverHeartRateSince)
+        XCTAssertEqual(provider.workoutsSinceDates, [serverWorkoutSince])
+    }
+
+    @MainActor
+    func testIncrementalSyncFallsBackToLocalLastSyncWhenLatestEndpointUnavailable() async throws {
+        let localLastSync = makeUTCDate(2026, 3, 3, 12, 0)
+        userDefaults.set(localLastSync, forKey: "lastSyncDate")
+
+        let provider = MockHealthDataProvider()
+        provider.recordsForIncrementalExport = [
+            HealthRecord(type: "HKQuantityTypeIdentifierStepCount", startDate: makeUTCDate(2026, 3, 4, 11, 0), endDate: makeUTCDate(2026, 3, 4, 11, 1), value: 500, unit: "count", source: "Watch")
+        ]
+        provider.workoutsForIncrementalExport = [
+            WorkoutRecord(type: "HKWorkoutActivityTypeWalking", startDate: makeUTCDate(2026, 3, 4, 11, 0), endDate: makeUTCDate(2026, 3, 4, 11, 20), durationMinutes: 20, distanceMiles: 1, calories: 120, source: "Phone")
+        ]
+
+        let uploadClient = MockUploadClient()
+        uploadClient.latestSyncDatesError = APIError.networkError
+        uploadClient.responses = [UploadResponse(inserted: 2, skipped: 0, errors: [])]
+
+        let exporter = HealthExporter(
+            apiClient: uploadClient,
+            dataProvider: provider,
+            userDefaults: userDefaults
+        )
+
+        try await exporter.performIncrementalSync()
+
+        XCTAssertEqual(provider.recordsSinceDates, [localLastSync])
+        XCTAssertEqual(provider.recordsPerTypeSince, [[:]])
+        XCTAssertEqual(provider.workoutsSinceDates, [localLastSync])
+    }
+
+    @MainActor
+    func testIncrementalSyncUsesServerStateWhenLocalSyncMissing() async throws {
+        let serverHeartRateSince = makeUTCDate(2026, 3, 4, 8, 0)
+        let serverWorkoutSince = makeUTCDate(2026, 3, 4, 9, 0)
+
+        let provider = MockHealthDataProvider()
+        provider.recordsForIncrementalExport = [
+            HealthRecord(type: "HKQuantityTypeIdentifierHeartRate", startDate: makeUTCDate(2026, 3, 4, 10, 0), endDate: makeUTCDate(2026, 3, 4, 10, 1), value: 75, unit: "count/min", source: "Watch")
+        ]
+        provider.workoutsForIncrementalExport = [
+            WorkoutRecord(type: "HKWorkoutActivityTypeRunning", startDate: makeUTCDate(2026, 3, 4, 10, 0), endDate: makeUTCDate(2026, 3, 4, 10, 30), durationMinutes: 30, distanceMiles: 3, calories: 250, source: "Watch")
+        ]
+
+        let uploadClient = MockUploadClient()
+        uploadClient.latestSyncDates = [
+            "HKQuantityTypeIdentifierHeartRate": serverHeartRateSince,
+            "HKWorkout": serverWorkoutSince
+        ]
+        uploadClient.responses = [UploadResponse(inserted: 2, skipped: 0, errors: [])]
+
+        let exporter = HealthExporter(
+            apiClient: uploadClient,
+            dataProvider: provider,
+            userDefaults: userDefaults
+        )
+
+        try await exporter.performIncrementalSync()
+
+        XCTAssertEqual(provider.recordsSinceDates, [nil])
+        XCTAssertEqual(provider.recordsPerTypeSince.count, 1)
+        XCTAssertEqual(provider.recordsPerTypeSince[0]["HKQuantityTypeIdentifierHeartRate"], serverHeartRateSince)
+        XCTAssertEqual(provider.workoutsSinceDates, [serverWorkoutSince])
+        XCTAssertEqual(uploadClient.uploadCalls.count, 1)
     }
 
     @MainActor
@@ -401,6 +504,47 @@ final class APIClientTests: XCTestCase {
 
         XCTAssertFalse(client.isPaired)
     }
+
+    func testGetOrCreateDeviceIdReturnsStableValue() throws {
+        let client = APIClient(session: session, keychain: keychain, userDefaults: userDefaults)
+
+        let first = try client.getOrCreateDeviceId()
+        let second = try client.getOrCreateDeviceId()
+
+        XCTAssertFalse(first.isEmpty)
+        XCTAssertEqual(first, second)
+    }
+
+    @MainActor
+    func testGetLatestSyncDatesIncludesDeviceIdAndParsesResponse() async throws {
+        try keychain.save(key: "healthDashboardAPIKey", value: "valid-key")
+
+        let expectedDeviceId = "test-device-id-123"
+        let heartRateTimestamp = "2026-03-04T19:11:00Z"
+        let workoutTimestamp = "2026-03-04T18:00:00Z"
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.url?.path, "/api/sync/latest")
+            XCTAssertEqual(URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "deviceId" })?.value, expectedDeviceId)
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer valid-key")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Device-ID"), expectedDeviceId)
+
+            let payload: [String: Any] = [
+                "latest": [
+                    "HKQuantityTypeIdentifierHeartRate": heartRateTimestamp,
+                    "HKWorkout": ["timestamp": workoutTimestamp]
+                ]
+            ]
+            let data = try JSONSerialization.data(withJSONObject: payload)
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
+        }
+
+        let client = APIClient(session: session, keychain: keychain, userDefaults: userDefaults)
+        let timestamps = try await client.getLatestSyncDates(deviceId: expectedDeviceId)
+
+        XCTAssertEqual(timestamps["HKQuantityTypeIdentifierHeartRate"], makeUTCDate(2026, 3, 4, 19, 11))
+        XCTAssertEqual(timestamps["HKWorkout"], makeUTCDate(2026, 3, 4, 18, 0))
+    }
 }
 
 final class KeychainHelperTests: XCTestCase {
@@ -491,6 +635,7 @@ private final class MockHealthDataProvider: HealthDataProviding {
     var authorizationRequestStatus: HKAuthorizationRequestStatus = .shouldRequest
 
     var recordsSinceDates: [Date?] = []
+    var recordsPerTypeSince: [[String: Date]] = []
     var workoutsSinceDates: [Date?] = []
 
     func requestAuthorization() async throws {}
@@ -499,9 +644,10 @@ private final class MockHealthDataProvider: HealthDataProviding {
         authorizationRequestStatus
     }
 
-    func exportAllRecords(since: Date?) async throws -> [HealthRecord] {
+    func exportAllRecords(since: Date?, perTypeSince: [String: Date]) async throws -> [HealthRecord] {
         recordsSinceDates.append(since)
-        return since == nil ? recordsForFullExport : recordsForIncrementalExport
+        recordsPerTypeSince.append(perTypeSince)
+        return (since == nil && perTypeSince.isEmpty) ? recordsForFullExport : recordsForIncrementalExport
     }
 
     func exportAllWorkouts(since: Date?) async throws -> [WorkoutRecord] {
@@ -514,6 +660,10 @@ private final class MockHealthDataProvider: HealthDataProviding {
 private final class MockUploadClient: HealthUploadClient {
     var responses: [UploadResponse] = []
     var uploadCalls: [(records: [APIHealthRecord], workouts: [APIWorkoutRecord])] = []
+    var latestSyncDates: [String: Date] = [:]
+    var latestSyncDatesError: Error?
+    var requestedLatestSyncDeviceIds: [String] = []
+    var deviceId = "test-device-id"
     var unpairCalled = false
 
     func uploadHealthData(records: [APIHealthRecord], workouts: [APIWorkoutRecord]) async throws -> UploadResponse {
@@ -522,6 +672,18 @@ private final class MockUploadClient: HealthUploadClient {
             return UploadResponse(inserted: records.count, skipped: 0, errors: [])
         }
         return responses.removeFirst()
+    }
+
+    func getOrCreateDeviceId() throws -> String {
+        deviceId
+    }
+
+    func getLatestSyncDates(deviceId: String) async throws -> [String: Date] {
+        requestedLatestSyncDeviceIds.append(deviceId)
+        if let latestSyncDatesError {
+            throw latestSyncDatesError
+        }
+        return latestSyncDates
     }
 
     func unpairDevice() {
