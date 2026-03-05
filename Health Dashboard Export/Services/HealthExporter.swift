@@ -393,9 +393,9 @@ class HealthExporter: ObservableObject {
 
             print("✓ Full export completed via API")
             print("✓ Uploaded \(apiRecords.count) records + \(apiWorkouts.count) workouts")
-            print("✓ Imported \(uploadedCounts.recordsImported) records + \(uploadedCounts.workoutsImported) workouts")
-            if uploadedCounts.recordsSkipped > 0 || uploadedCounts.workoutsSkipped > 0 {
-                print("  ℹ️ Skipped \(uploadedCounts.recordsSkipped) duplicate records + \(uploadedCounts.workoutsSkipped) duplicate workouts")
+            print("✓ Imported \(uploadedCounts.recordsImported) records (combined)")
+            if uploadedCounts.recordsSkipped > 0 {
+                print("  ℹ️ Skipped \(uploadedCounts.recordsSkipped) duplicates (combined)")
             }
         } catch {
             errorMessage = error.localizedDescription
@@ -443,9 +443,9 @@ class HealthExporter: ObservableObject {
 
             print("✓ Incremental sync completed via API")
             print("✓ Uploaded \(apiRecords.count) new records + \(apiWorkouts.count) new workouts since \(sinceDate)")
-            print("✓ Imported \(uploadedCounts.recordsImported) records + \(uploadedCounts.workoutsImported) workouts")
-            if uploadedCounts.recordsSkipped > 0 || uploadedCounts.workoutsSkipped > 0 {
-                print("  ℹ️ Skipped \(uploadedCounts.recordsSkipped) duplicate records + \(uploadedCounts.workoutsSkipped) duplicate workouts")
+            print("✓ Imported \(uploadedCounts.recordsImported) records (combined)")
+            if uploadedCounts.recordsSkipped > 0 {
+                print("  ℹ️ Skipped \(uploadedCounts.recordsSkipped) duplicates (combined)")
             }
         } catch {
             errorMessage = error.localizedDescription
@@ -499,12 +499,12 @@ class HealthExporter: ObservableObject {
                 workouts: workoutChunk
             )
 
-            counts.recordsImported += response.records.imported
-            counts.recordsSkipped += response.records.skipped_duplicate
-            counts.workoutsImported += response.workouts.imported
-            counts.workoutsSkipped += response.workouts.skipped_duplicate
+            counts.recordsImported += response.total.imported
+            counts.recordsSkipped += response.total.skipped_duplicate
+            counts.workoutsImported += 0
+            counts.workoutsSkipped += 0
 
-            print("   ✓ Chunk \(chunkIndex + 1) imported: \(response.records.imported) records + \(response.workouts.imported) workouts")
+            print("   ✓ Chunk \(chunkIndex + 1) imported: \(response.total.imported) records (combined)")
         }
 
         exportProgressText = "Upload complete"
