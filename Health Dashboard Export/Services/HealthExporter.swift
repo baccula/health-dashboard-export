@@ -144,7 +144,10 @@ class HealthExporter: ObservableObject {
             
             // Update sync state
             lastSyncDate = Date()
-            totalRecords = uploadedCounts.recordsImported + uploadedCounts.workoutsImported
+
+            // Fetch actual server totals to avoid local double-counting
+            let status = try await apiClient.getUploadStatus()
+            totalRecords = status.totalRecords
             saveSyncState()
             
             print("✓ Full export completed via API")
@@ -195,7 +198,10 @@ class HealthExporter: ObservableObject {
             
             // Update sync state
             lastSyncDate = Date()
-            totalRecords += uploadedCounts.recordsImported + uploadedCounts.workoutsImported
+
+            // Fetch actual server totals to avoid local double-counting
+            let status = try await apiClient.getUploadStatus()
+            totalRecords = status.totalRecords
             saveSyncState()
             
             print("✓ Incremental sync completed via API")
