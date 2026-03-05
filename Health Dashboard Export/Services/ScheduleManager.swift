@@ -8,6 +8,7 @@
 import Foundation
 import BackgroundTasks
 import Combine
+import UserNotifications
 
 @MainActor
 class ScheduleManager: ObservableObject {
@@ -16,6 +17,7 @@ class ScheduleManager: ObservableObject {
     private let userDefaults = UserDefaults.standard
     private let schedulesKey = "syncSchedules"
     private let backgroundTaskIdentifier = "com.healthexport.sync"
+    private let notificationsPermissionRequestedKey = "notificationsPermissionRequested"
     
     init() {
         loadSchedules()
@@ -29,8 +31,14 @@ class ScheduleManager: ObservableObject {
     // MARK: - Schedule Management
     
     func addSchedule(_ schedule: SyncSchedule) {
+        let isFirstSchedule = schedules.isEmpty
         schedules.append(schedule)
         saveSchedules()
+        if isFirstSchedule {
+            Task {
+                await requestNotificationPermission()
+            }
+        }
         scheduleBackgroundTask()
     }
     
@@ -207,8 +215,10 @@ class ScheduleManager: ObservableObject {
                 updateScheduleAfterRun(schedule)
                 print("✓ Executed scheduled sync: \(schedule.name)")
             } catch {
+                let errorDescription = error.localizedDescription
                 print("✗ Failed to execute scheduled sync '\(schedule.name)': \(error)")
                 success = false
+                await sendFailureNotification(scheduleName: schedule.name, error: errorDescription)
             }
         }
 
@@ -224,6 +234,42 @@ class ScheduleManager: ObservableObject {
                 at: schedule.time
             )
             saveSchedules()
+        }
+    }
+
+    func requestNotificationPermission() async {
+        if userDefaults.bool(forKey: notificationsPermissionRequestedKey) {
+            return
+        }
+
+        do {
+            let granted = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
+            userDefaults.set(true, forKey: notificationsPermissionRequestedKey)
+            if !granted {
+                print("⚠️ Notification permission not granted")
+            }
+        } catch {
+            print("Could not request notification permission: \(error)")
+        }
+    }
+
+    private func sendFailureNotification(scheduleName: String, error: String) async {
+        let content = UNMutableNotificationContent()
+        content.title = "Sync Failed"
+        content.body = "Scheduled sync '\(scheduleName)' failed: \(error)"
+        content.sound = .default
+
+        let request = UNNotificationRequest(
+            identifier: UUID().uuidString,
+            content: content,
+            trigger: nil
+        )
+
+        do {
+            try await UNUserNotificationCenter.current().add(request)
+            print("📣 Sent failure notification for schedule '\(scheduleName)'")
+        } catch {
+            print("Could not send failure notification: \(error)")
         }
     }
     
