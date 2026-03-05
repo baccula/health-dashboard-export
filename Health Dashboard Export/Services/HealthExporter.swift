@@ -33,7 +33,7 @@ class HealthExporter: ObservableObject {
     private lazy var apiDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss Z"
-        formatter.timeZone = TimeZone.current
+        formatter.timeZone = TimeZone(identifier: "UTC")
         return formatter
     }()
 
