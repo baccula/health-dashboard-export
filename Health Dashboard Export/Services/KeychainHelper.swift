@@ -8,9 +8,16 @@
 import Foundation
 import Security
 
+protocol KeychainStoring {
+    func save(key: String, value: String) throws
+    func load(key: String) throws -> String?
+    func delete(key: String) throws
+    func exists(key: String) -> Bool
+}
+
 /// Secure storage for API keys using iOS Keychain Services
 /// Keys are stored device-specific (no iCloud sync)
-class KeychainHelper {
+class KeychainHelper: KeychainStoring {
     static let shared = KeychainHelper()
     
     private let service = "com.healthexport.apikey"

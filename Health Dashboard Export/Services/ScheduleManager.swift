@@ -14,16 +14,25 @@ import UserNotifications
 class ScheduleManager: ObservableObject {
     @Published var schedules: [SyncSchedule] = []
     
-    private let userDefaults = UserDefaults.standard
+    private let userDefaults: UserDefaults
+    private let nowProvider: () -> Date
+    private let shouldManageBackgroundTasks: Bool
     private let schedulesKey = "syncSchedules"
     private let backgroundTaskIdentifier = "com.healthexport.sync"
     private let notificationsPermissionRequestedKey = "notificationsPermissionRequested"
     
-    init() {
+    init(
+        userDefaults: UserDefaults = .standard,
+        shouldManageBackgroundTasks: Bool = true,
+        nowProvider: @escaping () -> Date = Date.init
+    ) {
+        self.userDefaults = userDefaults
+        self.shouldManageBackgroundTasks = shouldManageBackgroundTasks
+        self.nowProvider = nowProvider
         loadSchedules()
         registerBackgroundTasks()
         updateOverdueSchedules()
-        if !schedules.isEmpty {
+        if shouldManageBackgroundTasks, !schedules.isEmpty {
             scheduleBackgroundTask()
         }
     }
@@ -83,7 +92,7 @@ class ScheduleManager: ObservableObject {
     /// Updates schedules whose nextRun time has passed without executing
     /// This prevents the timer from counting up when app is reopened after scheduled time
     private func updateOverdueSchedules() {
-        let now = Date()
+        let now = nowProvider()
         var needsSave = false
 
         for i in 0..<schedules.count {
@@ -117,6 +126,8 @@ class ScheduleManager: ObservableObject {
     // MARK: - Background Task Registration
     
     private func registerBackgroundTasks() {
+        guard shouldManageBackgroundTasks else { return }
+
         BGTaskScheduler.shared.register(
             forTaskWithIdentifier: backgroundTaskIdentifier,
             using: nil
@@ -128,6 +139,8 @@ class ScheduleManager: ObservableObject {
     }
     
     private func scheduleBackgroundTask() {
+        guard shouldManageBackgroundTasks else { return }
+
         // Cancel existing tasks
         BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: backgroundTaskIdentifier)
         
