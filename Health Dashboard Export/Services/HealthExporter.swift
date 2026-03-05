@@ -375,9 +375,7 @@ class HealthExporter: ObservableObject {
         userDefaults.removeObject(forKey: lastSyncKey)
         userDefaults.removeObject(forKey: totalRecordsKey)
 
-        apiClient.unpairDevice()
-
-        print("✓ All sync data cleared and device unpaired")
+        print("✓ All sync data cleared (pairing preserved)")
     }
 
     // MARK: - HealthKit Authorization
