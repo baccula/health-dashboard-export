@@ -8,20 +8,31 @@
 import Foundation
 import BackgroundTasks
 import Combine
+import UserNotifications
 
 @MainActor
 class ScheduleManager: ObservableObject {
     @Published var schedules: [SyncSchedule] = []
     
-    private let userDefaults = UserDefaults.standard
+    private let userDefaults: UserDefaults
+    private let nowProvider: () -> Date
+    private let shouldManageBackgroundTasks: Bool
     private let schedulesKey = "syncSchedules"
     private let backgroundTaskIdentifier = "com.healthexport.sync"
+    private let notificationsPermissionRequestedKey = "notificationsPermissionRequested"
     
-    init() {
+    init(
+        userDefaults: UserDefaults = .standard,
+        shouldManageBackgroundTasks: Bool = true,
+        nowProvider: @escaping () -> Date = Date.init
+    ) {
+        self.userDefaults = userDefaults
+        self.shouldManageBackgroundTasks = shouldManageBackgroundTasks
+        self.nowProvider = nowProvider
         loadSchedules()
         registerBackgroundTasks()
         updateOverdueSchedules()
-        if !schedules.isEmpty {
+        if shouldManageBackgroundTasks, !schedules.isEmpty {
             scheduleBackgroundTask()
         }
     }
@@ -29,8 +40,14 @@ class ScheduleManager: ObservableObject {
     // MARK: - Schedule Management
     
     func addSchedule(_ schedule: SyncSchedule) {
+        let isFirstSchedule = schedules.isEmpty
         schedules.append(schedule)
         saveSchedules()
+        if isFirstSchedule {
+            Task {
+                await requestNotificationPermission()
+            }
+        }
         scheduleBackgroundTask()
     }
     
@@ -75,7 +92,7 @@ class ScheduleManager: ObservableObject {
     /// Updates schedules whose nextRun time has passed without executing
     /// This prevents the timer from counting up when app is reopened after scheduled time
     private func updateOverdueSchedules() {
-        let now = Date()
+        let now = nowProvider()
         var needsSave = false
 
         for i in 0..<schedules.count {
@@ -109,6 +126,8 @@ class ScheduleManager: ObservableObject {
     // MARK: - Background Task Registration
     
     private func registerBackgroundTasks() {
+        guard shouldManageBackgroundTasks else { return }
+
         BGTaskScheduler.shared.register(
             forTaskWithIdentifier: backgroundTaskIdentifier,
             using: nil
@@ -120,6 +139,8 @@ class ScheduleManager: ObservableObject {
     }
     
     private func scheduleBackgroundTask() {
+        guard shouldManageBackgroundTasks else { return }
+
         // Cancel existing tasks
         BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: backgroundTaskIdentifier)
         
@@ -207,8 +228,10 @@ class ScheduleManager: ObservableObject {
                 updateScheduleAfterRun(schedule)
                 print("✓ Executed scheduled sync: \(schedule.name)")
             } catch {
+                let errorDescription = error.localizedDescription
                 print("✗ Failed to execute scheduled sync '\(schedule.name)': \(error)")
                 success = false
+                await sendFailureNotification(scheduleName: schedule.name, error: errorDescription)
             }
         }
 
@@ -224,6 +247,42 @@ class ScheduleManager: ObservableObject {
                 at: schedule.time
             )
             saveSchedules()
+        }
+    }
+
+    func requestNotificationPermission() async {
+        if userDefaults.bool(forKey: notificationsPermissionRequestedKey) {
+            return
+        }
+
+        do {
+            let granted = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
+            userDefaults.set(true, forKey: notificationsPermissionRequestedKey)
+            if !granted {
+                print("⚠️ Notification permission not granted")
+            }
+        } catch {
+            print("Could not request notification permission: \(error)")
+        }
+    }
+
+    private func sendFailureNotification(scheduleName: String, error: String) async {
+        let content = UNMutableNotificationContent()
+        content.title = "Sync Failed"
+        content.body = "Scheduled sync '\(scheduleName)' failed: \(error)"
+        content.sound = .default
+
+        let request = UNNotificationRequest(
+            identifier: UUID().uuidString,
+            content: content,
+            trigger: nil
+        )
+
+        do {
+            try await UNUserNotificationCenter.current().add(request)
+            print("📣 Sent failure notification for schedule '\(scheduleName)'")
+        } catch {
+            print("Could not send failure notification: \(error)")
         }
     }
     
