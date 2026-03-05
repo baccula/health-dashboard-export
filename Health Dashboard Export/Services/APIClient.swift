@@ -12,10 +12,11 @@ class APIClient {
     static let shared = APIClient()
     
     private let defaultBaseURL = "https://health.neuwirth.cc"
-    private let userDefaults = UserDefaults.standard
+    private let userDefaults: UserDefaults
     private let baseURLKey = "apiBaseURL"
-    private let keychain = KeychainHelper.shared
+    private let keychain: KeychainStoring
     private let apiKeyName = "healthDashboardAPIKey"
+    private let session: URLSession
     
     var baseURL: String {
         get {
@@ -30,7 +31,15 @@ class APIClient {
         userDefaults.removeObject(forKey: baseURLKey)
     }
     
-    private init() {}
+    init(
+        session: URLSession = .shared,
+        keychain: KeychainStoring = KeychainHelper.shared,
+        userDefaults: UserDefaults = .standard
+    ) {
+        self.session = session
+        self.keychain = keychain
+        self.userDefaults = userDefaults
+    }
     
     // MARK: - Authentication
     
@@ -79,7 +88,7 @@ class APIClient {
         print("📤 Sending pairing request with code: \(code)")
         
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await session.data(for: request)
             let httpResponse = response as! HTTPURLResponse
             print("📥 Pairing response status: \(httpResponse.statusCode)")
             
@@ -207,7 +216,7 @@ class APIClient {
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 30
         
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
         let httpResponse = response as! HTTPURLResponse
         
         guard httpResponse.statusCode == 200 else {
@@ -237,7 +246,7 @@ class APIClient {
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 30
         
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
         let httpResponse = response as! HTTPURLResponse
         
         guard httpResponse.statusCode == 200 else {
@@ -250,34 +259,6 @@ class APIClient {
         
         let devicesResponse = try JSONDecoder().decode(DevicesResponse.self, from: data)
         return devicesResponse.devices
-    }
-    
-    /// Revoke a paired device
-    /// - Parameter deviceId: Device ID to revoke
-    /// - Throws: APIError on failure
-    func revokeDevice(_ deviceId: String) async throws {
-        guard let apiKey = getAPIKey() else {
-            throw APIError.notPaired
-        }
-        
-        let url = URL(string: "\(baseURL)/api/pair/devices/\(deviceId)")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "DELETE"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 30
-        
-        let (_, response) = try await URLSession.shared.data(for: request)
-        let httpResponse = response as! HTTPURLResponse
-        
-        guard httpResponse.statusCode == 200 else {
-            if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
-                try? clearAPIKey()
-                throw APIError.authExpired
-            }
-            throw APIError.requestFailed("Revoke device failed with status \(httpResponse.statusCode)")
-        }
-        
-        print("✓ Device \(deviceId) revoked")
     }
     
     // MARK: - Retry Logic
@@ -294,7 +275,7 @@ class APIClient {
             do {
                 print("🔄 Network request attempt \(attempt)/\(maxAttempts)...")
                 let startTime = Date()
-                let result = try await URLSession.shared.data(for: request)
+                let result = try await session.data(for: request)
                 let elapsed = Date().timeIntervalSince(startTime)
                 print("✓ Request completed in \(String(format: "%.1f", elapsed))s")
                 return result
