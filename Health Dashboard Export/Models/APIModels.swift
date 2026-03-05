@@ -93,3 +93,7 @@ struct APIErrorResponse: Codable {
     let status: String
     let message: String
 }
+
+struct FastAPIErrorResponse: Codable {
+    let detail: String
+}
