@@ -19,6 +19,7 @@ extension APIClient: HealthUploadClient {}
 
 protocol HealthDataProviding {
     func requestAuthorization() async throws
+    func authorizationRequestStatus() async throws -> HKAuthorizationRequestStatus
     func exportAllRecords(since: Date?) async throws -> [HealthRecord]
     func exportAllWorkouts(since: Date?) async throws -> [WorkoutRecord]
 }
@@ -47,6 +48,33 @@ final class HealthKitDataProvider: HealthDataProviding {
         })
 
         try await healthStore.requestAuthorization(toShare: [], read: typesToRead)
+    }
+
+    func authorizationRequestStatus() async throws -> HKAuthorizationRequestStatus {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            throw HealthExportError.healthKitNotAvailable
+        }
+
+        let typesToRead = Set(HealthDataType.allTypes.compactMap { type -> HKSampleType? in
+            switch type {
+            case .quantity(let identifier):
+                return HKQuantityType(identifier)
+            case .category(let identifier):
+                return HKCategoryType(identifier)
+            case .workout:
+                return HKWorkoutType.workoutType()
+            }
+        })
+
+        return try await withCheckedThrowingContinuation { continuation in
+            healthStore.getRequestStatusForAuthorization(toShare: [], read: typesToRead) { status, error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                continuation.resume(returning: status)
+            }
+        }
     }
 
     func exportAllRecords(since: Date? = nil) async throws -> [HealthRecord] {
@@ -357,6 +385,10 @@ class HealthExporter: ObservableObject {
     func requestAuthorization() async throws {
         try await dataProvider.requestAuthorization()
         isAuthorized = true
+    }
+
+    func authorizationRequestStatus() async throws -> HKAuthorizationRequestStatus {
+        try await dataProvider.authorizationRequestStatus()
     }
 
     // MARK: - Full Export

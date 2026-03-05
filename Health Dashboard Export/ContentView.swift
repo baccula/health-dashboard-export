@@ -182,7 +182,7 @@ struct ContentView: View {
             SettingsView(exporter: exporter)
         }
         .fullScreenCover(isPresented: $showingOnboarding) {
-            OnboardingView(isOnboardingComplete: $showingOnboarding)
+            OnboardingView(isOnboardingPresented: $showingOnboarding)
         }
         .sheet(isPresented: $showingScheduleEditor) {
             ScheduleEditorView(scheduleManager: scheduleManager, exporter: exporter)

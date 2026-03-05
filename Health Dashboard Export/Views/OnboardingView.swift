@@ -8,19 +8,20 @@
 import SwiftUI
 
 struct OnboardingView: View {
-    @Binding var isOnboardingComplete: Bool
+    @Binding var isOnboardingPresented: Bool
     @State private var pairingCode: String = ""
     @State private var isPairing = false
     @State private var isPaired = false
     @State private var errorMessage: String?
     @State private var showingAPISettings = false
     @State private var customAPIURL: String
+    @State private var didAttemptAutoComplete = false
     
     private let apiClient = APIClient.shared
     private let exporter = HealthExporter()
     
-    init(isOnboardingComplete: Binding<Bool>) {
-        _isOnboardingComplete = isOnboardingComplete
+    init(isOnboardingPresented: Binding<Bool>) {
+        _isOnboardingPresented = isOnboardingPresented
         _customAPIURL = State(initialValue: APIClient.shared.baseURL)
     }
     
@@ -173,6 +174,18 @@ struct OnboardingView: View {
                     }
                 }
             }
+            .task {
+                if isPaired {
+                    await attemptAutoCompleteIfAuthorized()
+                }
+            }
+            .onChange(of: isPaired) { _, newValue in
+                if newValue {
+                    Task {
+                        await attemptAutoCompleteIfAuthorized()
+                    }
+                }
+            }
             .sheet(isPresented: $showingAPISettings) {
                 NavigationStack {
                     Form {
@@ -271,13 +284,28 @@ struct OnboardingView: View {
             // Complete onboarding
             await MainActor.run {
                 print("✅ Onboarding complete")
-                isOnboardingComplete = true
+                isOnboardingPresented = false
             }
         } catch {
             print("❌ HealthKit authorization error: \(error)")
             await MainActor.run {
                 errorMessage = "HealthKit access error: \(error.localizedDescription)"
             }
+        }
+    }
+
+    @MainActor
+    private func attemptAutoCompleteIfAuthorized() async {
+        guard !didAttemptAutoComplete else { return }
+        didAttemptAutoComplete = true
+
+        do {
+            let status = try await exporter.authorizationRequestStatus()
+            if status == .unnecessary {
+                isOnboardingPresented = false
+            }
+        } catch {
+            print("⚠️ Unable to determine HealthKit authorization status: \(error)")
         }
     }
 }
@@ -310,5 +338,5 @@ struct InstructionRow: View {
 // MARK: - Preview
 
 #Preview {
-    OnboardingView(isOnboardingComplete: .constant(false))
+    OnboardingView(isOnboardingPresented: .constant(false))
 }

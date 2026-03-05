@@ -5,6 +5,7 @@
 //  Created by Mike Neuwirth on 2/11/26.
 //
 
+import HealthKit
 import XCTest
 @testable import Health_Dashboard_Export
 
@@ -487,11 +488,16 @@ private final class MockHealthDataProvider: HealthDataProviding {
     var workoutsForFullExport: [WorkoutRecord] = []
     var recordsForIncrementalExport: [HealthRecord] = []
     var workoutsForIncrementalExport: [WorkoutRecord] = []
+    var authorizationRequestStatus: HKAuthorizationRequestStatus = .shouldRequest
 
     var recordsSinceDates: [Date?] = []
     var workoutsSinceDates: [Date?] = []
 
     func requestAuthorization() async throws {}
+
+    func authorizationRequestStatus() async throws -> HKAuthorizationRequestStatus {
+        authorizationRequestStatus
+    }
 
     func exportAllRecords(since: Date?) async throws -> [HealthRecord] {
         recordsSinceDates.append(since)
