@@ -257,7 +257,7 @@ struct ScheduleCardView: View {
                 HStack(spacing: 12) {
                     Label(schedule.frequency.rawValue, systemImage: schedule.frequency.icon)
                     
-                    if let nextRun = schedule.nextRun {
+                    if let nextRun = scheduleManager.nextRun(for: schedule) {
                         HStack(spacing: 4) {
                             Image(systemName: "clock")
                             Text(nextRun, style: .relative)
