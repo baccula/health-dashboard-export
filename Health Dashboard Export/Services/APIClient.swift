@@ -31,6 +31,22 @@ class APIClient {
         userDefaults.removeObject(forKey: baseURLKey)
     }
     
+    // MARK: - Error Handling
+    
+    /// Extract error message from API response (handles both FastAPI {detail} and custom {message} formats)
+    private func extractErrorMessage(from data: Data, statusCode: Int) -> String {
+        // Try FastAPI format first: {detail: "..."}
+        if let fastAPIError = try? JSONDecoder().decode(FastAPIErrorResponse.self, from: data) {
+            return fastAPIError.detail
+        }
+        // Try custom format: {status, message}
+        if let apiError = try? JSONDecoder().decode(APIErrorResponse.self, from: data) {
+            return apiError.message
+        }
+        // Fallback
+        return "Request failed with status \(statusCode)"
+    }
+    
     init(
         session: URLSession = .shared,
         keychain: KeychainStoring = KeychainHelper.shared,
@@ -98,8 +114,7 @@ class APIClient {
             }
             
             guard httpResponse.statusCode == 200 else {
-                let errorResponse = try? JSONDecoder().decode(APIErrorResponse.self, from: data)
-                let message = errorResponse?.message ?? "Pairing failed with status \(httpResponse.statusCode)"
+                let message = extractErrorMessage(from: data, statusCode: httpResponse.statusCode)
                 print("❌ Pairing failed: \(message)")
                 throw APIError.pairingFailed(message)
             }
@@ -189,13 +204,11 @@ class APIClient {
             throw APIError.payloadTooLarge
             
         case 500:
-            let errorResponse = try? JSONDecoder().decode(APIErrorResponse.self, from: data)
-            let message = errorResponse?.message ?? "Server error"
+            let message = extractErrorMessage(from: data, statusCode: 500)
             throw APIError.serverError(message)
             
         default:
-            let errorResponse = try? JSONDecoder().decode(APIErrorResponse.self, from: data)
-            let message = errorResponse?.message ?? "Upload failed with status \(httpResponse.statusCode)"
+            let message = extractErrorMessage(from: data, statusCode: httpResponse.statusCode)
             throw APIError.uploadFailed(message)
         }
     }
