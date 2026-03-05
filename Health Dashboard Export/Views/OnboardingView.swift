@@ -117,7 +117,7 @@ struct OnboardingView: View {
                             .multilineTextAlignment(.center)
                             .font(.title2)
                             .disabled(isPairing)
-                            .onChange(of: pairingCode) { newValue in
+                            .onChange(of: pairingCode) { _, newValue in
                                 // Limit to 6 digits
                                 if newValue.count > 6 {
                                     pairingCode = String(newValue.prefix(6))

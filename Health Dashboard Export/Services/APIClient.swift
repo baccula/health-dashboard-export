@@ -7,7 +7,6 @@
 
 import Foundation
 
-@MainActor
 class APIClient {
     static let shared = APIClient()
     

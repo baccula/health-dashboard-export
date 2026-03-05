@@ -10,7 +10,6 @@ import HealthKit
 import SwiftUI
 import Combine
 
-@MainActor
 protocol HealthUploadClient {
     func uploadHealthData(records: [APIHealthRecord], workouts: [APIWorkoutRecord]) async throws -> UploadResponse
     func unpairDevice()
@@ -18,14 +17,12 @@ protocol HealthUploadClient {
 
 extension APIClient: HealthUploadClient {}
 
-@MainActor
 protocol HealthDataProviding {
     func requestAuthorization() async throws
     func exportAllRecords(since: Date?) async throws -> [HealthRecord]
     func exportAllWorkouts(since: Date?) async throws -> [WorkoutRecord]
 }
 
-@MainActor
 final class HealthKitDataProvider: HealthDataProviding {
     private let healthStore: HKHealthStore
 
@@ -81,6 +78,7 @@ final class HealthKitDataProvider: HealthDataProviding {
     }
 
     private func queryQuantitySamples(for type: HKQuantityType, since: Date?) async throws -> [HealthRecord] {
+        let unit = preferredUnit(for: type)
         return try await withCheckedThrowingContinuation { continuation in
             var predicate: NSPredicate?
             if let since = since {
@@ -104,7 +102,6 @@ final class HealthKitDataProvider: HealthDataProviding {
                 }
 
                 let records = quantitySamples.map { sample in
-                    let unit = self.preferredUnit(for: type)
                     let value = sample.quantity.doubleValue(for: unit)
 
                     return HealthRecord(
@@ -197,8 +194,10 @@ final class HealthKitDataProvider: HealthDataProviding {
                     }
 
                     var calories: Double?
-                    if let energy = workout.totalEnergyBurned {
-                        calories = energy.doubleValue(for: .kilocalorie())
+                    if let activeEnergyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned),
+                       let statistics = workout.statistics(for: activeEnergyType),
+                       let sum = statistics.sumQuantity() {
+                        calories = sum.doubleValue(for: .kilocalorie())
                     }
 
                     return WorkoutRecord(
@@ -292,13 +291,13 @@ class HealthExporter: ObservableObject {
     static let syncStateDidChangeNotification = Notification.Name("HealthExporterSyncStateDidChange")
 
     init(
-        apiClient: HealthUploadClient = APIClient.shared,
+        apiClient: HealthUploadClient? = nil,
         dataProvider: HealthDataProviding? = nil,
         userDefaults: UserDefaults = .standard,
         notificationCenter: NotificationCenter = .default,
         nowProvider: @escaping () -> Date = Date.init
     ) {
-        self.apiClient = apiClient
+        self.apiClient = apiClient ?? APIClient.shared
         self.dataProvider = dataProvider ?? HealthKitDataProvider()
         self.userDefaults = userDefaults
         self.notificationCenter = notificationCenter
