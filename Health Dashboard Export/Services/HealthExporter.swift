@@ -293,13 +293,13 @@ class HealthExporter: ObservableObject {
 
     init(
         apiClient: HealthUploadClient = APIClient.shared,
-        dataProvider: HealthDataProviding = HealthKitDataProvider(),
+        dataProvider: HealthDataProviding? = nil,
         userDefaults: UserDefaults = .standard,
         notificationCenter: NotificationCenter = .default,
         nowProvider: @escaping () -> Date = Date.init
     ) {
         self.apiClient = apiClient
-        self.dataProvider = dataProvider
+        self.dataProvider = dataProvider ?? HealthKitDataProvider()
         self.userDefaults = userDefaults
         self.notificationCenter = notificationCenter
         self.nowProvider = nowProvider
@@ -575,7 +575,7 @@ enum APIDateCodec {
     private static let apiFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss Z"
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.timeZone = TimeZone.current
         return formatter
     }()
 

@@ -76,7 +76,7 @@ struct UploadResponse: Codable {
 
     // Aggregate stats for display (API returns combined counts)
     var total: UploadStats {
-        UploadStats(received: inserted + skipped, imported: inserted, skipped_duplicate: skipped, errors: errors.count)
+        UploadStats(received: inserted + skipped + errors.count, imported: inserted, skipped_duplicate: skipped, errors: errors.count)
     }
 }
 

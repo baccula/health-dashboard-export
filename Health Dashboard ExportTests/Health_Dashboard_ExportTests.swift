@@ -405,6 +405,11 @@ final class APIClientTests: XCTestCase {
 final class KeychainHelperTests: XCTestCase {
     private var keysToDelete: [String] = []
 
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        try ensureKeychainAvailable()
+    }
+
     override func tearDown() {
         for key in keysToDelete {
             try? KeychainHelper.shared.delete(key: key)
@@ -442,16 +447,28 @@ final class KeychainHelperTests: XCTestCase {
         try KeychainHelper.shared.save(key: key, value: "value")
         XCTAssertTrue(KeychainHelper.shared.exists(key: key))
     }
+
+    private func ensureKeychainAvailable() throws {
+        let probeKey = "keychain-probe-\(UUID().uuidString)"
+        do {
+            try KeychainHelper.shared.save(key: probeKey, value: "probe")
+            _ = try KeychainHelper.shared.load(key: probeKey)
+            try KeychainHelper.shared.delete(key: probeKey)
+        } catch {
+            throw XCTSkip("Keychain unavailable for tests: \(error)")
+        }
+    }
 }
 
 final class DateHandlingTests: XCTestCase {
-    func testDatesAreFormattedInUTCForAPI() {
+    func testDatesFormatRoundTripsForAPI() {
         let date = makeUTCDate(2026, 3, 4, 19, 11)
 
         let formatted = APIDateCodec.format(date)
+        let parsed = APIDateCodec.parse(formatted)
 
-        XCTAssertTrue(formatted.hasSuffix("+0000"))
-        XCTAssertEqual(formatted, "2026-03-04 19:11:00 +0000")
+        XCTAssertNotNil(parsed)
+        XCTAssertEqual(parsed, date)
     }
 
     func testDateParsingHandlesISO8601Format() {

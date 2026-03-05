@@ -222,24 +222,15 @@ class APIClient {
     /// - Throws: APIError on failure
     func listDevices() async throws -> [DeviceInfo] {
         // Note: API endpoint is intentionally open (no auth required)
-        let apiKey = getAPIKey()
-        
         let url = URL(string: "\(baseURL)/api/pair/devices")!
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
-        if let apiKey = apiKey {
-            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        }
         request.timeoutInterval = 30
         
         let (data, response) = try await session.data(for: request)
         let httpResponse = response as! HTTPURLResponse
         
         guard httpResponse.statusCode == 200 else {
-            if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
-                try? clearAPIKey()
-                throw APIError.authExpired
-            }
             throw APIError.requestFailed("List devices failed with status \(httpResponse.statusCode)")
         }
         
