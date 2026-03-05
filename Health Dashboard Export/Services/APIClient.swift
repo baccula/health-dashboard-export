@@ -202,34 +202,6 @@ class APIClient {
     
     // MARK: - Status
     
-    /// Get upload status and server stats
-    /// - Returns: UploadStatusResponse with last upload time and record counts
-    /// - Throws: APIError on failure
-    func getUploadStatus() async throws -> UploadStatusResponse {
-        guard let apiKey = getAPIKey() else {
-            throw APIError.notPaired
-        }
-        
-        let url = URL(string: "\(baseURL)/api/upload/status")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 30
-        
-        let (data, response) = try await session.data(for: request)
-        let httpResponse = response as! HTTPURLResponse
-        
-        guard httpResponse.statusCode == 200 else {
-            if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
-                try? clearAPIKey()
-                throw APIError.authExpired
-            }
-            throw APIError.requestFailed("Status check failed with status \(httpResponse.statusCode)")
-        }
-        
-        return try JSONDecoder().decode(UploadStatusResponse.self, from: data)
-    }
-    
     // MARK: - Device Management
     
     /// List all paired devices
