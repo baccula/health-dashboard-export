@@ -91,15 +91,6 @@ struct UploadStats: Codable {
     let errors: Int
 }
 
-// MARK: - Status Models
-
-struct UploadStatusResponse: Codable {
-    let lastUpload: String?
-    let totalRecords: Int
-    let totalWorkouts: Int
-    let databaseSizeMb: Double
-}
-
 // MARK: - Error Models
 
 struct APIErrorResponse: Codable {
