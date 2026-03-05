@@ -221,14 +221,15 @@ class APIClient {
     /// - Returns: Array of DeviceInfo
     /// - Throws: APIError on failure
     func listDevices() async throws -> [DeviceInfo] {
-        guard let apiKey = getAPIKey() else {
-            throw APIError.notPaired
-        }
+        // Note: API endpoint is intentionally open (no auth required)
+        let apiKey = getAPIKey()
         
         let url = URL(string: "\(baseURL)/api/pair/devices")!
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        if let apiKey = apiKey {
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        }
         request.timeoutInterval = 30
         
         let (data, response) = try await session.data(for: request)
