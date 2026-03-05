@@ -15,6 +15,7 @@ class APIClient {
     private let baseURLKey = "apiBaseURL"
     private let keychain: KeychainStoring
     private let apiKeyName = "healthDashboardAPIKey"
+    private let deviceIdName = "healthDashboardDeviceId"
     private let session: URLSession
     
     var baseURL: String {
@@ -72,6 +73,18 @@ class APIClient {
     /// Clear the stored API key (for re-pairing)
     func clearAPIKey() throws {
         try keychain.delete(key: apiKeyName)
+    }
+
+    /// Returns a stable device identifier persisted in Keychain.
+    /// This survives app reinstalls and is tied to this app's keychain access.
+    func getOrCreateDeviceId() throws -> String {
+        if let existing = try keychain.load(key: deviceIdName), !existing.isEmpty {
+            return existing
+        }
+
+        let deviceId = UUID().uuidString.lowercased()
+        try keychain.save(key: deviceIdName, value: deviceId)
+        return deviceId
     }
     
     /// Unpair the device (clears API key)
@@ -146,12 +159,14 @@ class APIClient {
         guard let apiKey = getAPIKey() else {
             throw APIError.notPaired
         }
+        let deviceId = try getOrCreateDeviceId()
         
         let url = URL(string: "\(baseURL)/api/upload")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(deviceId, forHTTPHeaderField: "X-Device-ID")
         request.timeoutInterval = 300 // 5 minutes for large uploads
         
         let uploadData = UploadData(records: records, workouts: workouts)
@@ -213,6 +228,43 @@ class APIClient {
     }
     
     // MARK: - Status
+
+    /// Fetch latest sync timestamps from server, keyed by HealthKit type identifier.
+    /// - Parameter deviceId: Stable device ID used to identify this device on server.
+    /// - Returns: Dictionary of `HealthKitType -> Date` timestamps.
+    func getLatestSyncDates(deviceId: String) async throws -> [String: Date] {
+        guard let apiKey = getAPIKey() else {
+            throw APIError.notPaired
+        }
+
+        var components = URLComponents(string: "\(baseURL)/api/sync/latest")!
+        components.queryItems = [
+            URLQueryItem(name: "deviceId", value: deviceId)
+        ]
+        guard let url = components.url else {
+            throw APIError.requestFailed("Invalid sync latest URL")
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue(deviceId, forHTTPHeaderField: "X-Device-ID")
+        request.timeoutInterval = 30
+
+        let (data, response) = try await session.data(for: request)
+        let httpResponse = response as! HTTPURLResponse
+
+        switch httpResponse.statusCode {
+        case 200:
+            return try parseSyncLatestDates(from: data)
+        case 401, 403:
+            try? clearAPIKey()
+            throw APIError.authExpired
+        default:
+            let message = extractErrorMessage(from: data, statusCode: httpResponse.statusCode)
+            throw APIError.requestFailed(message)
+        }
+    }
     
     // MARK: - Device Management
     
@@ -238,6 +290,58 @@ class APIClient {
     }
     
     // MARK: - Retry Logic
+
+    private func parseSyncLatestDates(from data: Data) throws -> [String: Date] {
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw APIError.requestFailed("Invalid sync latest response format")
+        }
+
+        var parsed: [String: Date] = [:]
+        extractSyncDates(from: json, into: &parsed, depth: 0)
+        return parsed
+    }
+
+    private func extractSyncDates(from map: [String: Any], into parsed: inout [String: Date], depth: Int) {
+        guard depth <= 4 else { return }
+
+        for (key, value) in map {
+            if let normalizedKey = normalizedHealthTypeKey(key) {
+                if let dateString = value as? String, let date = APIDateCodec.parse(dateString) {
+                    parsed[normalizedKey] = date
+                    continue
+                }
+                if let nested = value as? [String: Any],
+                   let date = parseTimestamp(from: nested) {
+                    parsed[normalizedKey] = date
+                    continue
+                }
+            }
+
+            if let nested = value as? [String: Any] {
+                extractSyncDates(from: nested, into: &parsed, depth: depth + 1)
+            }
+        }
+    }
+
+    private func normalizedHealthTypeKey(_ key: String) -> String? {
+        if key.hasPrefix("HK") {
+            return key
+        }
+        if key.caseInsensitiveCompare("workout") == .orderedSame {
+            return HealthDataType.workout.name
+        }
+        return nil
+    }
+
+    private func parseTimestamp(from map: [String: Any]) -> Date? {
+        let timestampKeys = ["timestamp", "latest", "lastSync", "date"]
+        for key in timestampKeys {
+            if let rawValue = map[key] as? String, let date = APIDateCodec.parse(rawValue) {
+                return date
+            }
+        }
+        return nil
+    }
     
     /// Perform a request with exponential backoff retry (max 3 attempts)
     /// - Parameter request: URLRequest to execute
