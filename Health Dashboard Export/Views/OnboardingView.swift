@@ -5,6 +5,7 @@
 //  Created by Mike Neuwirth on 2/25/26.
 //
 
+import HealthKit
 import SwiftUI
 
 struct OnboardingView: View {
