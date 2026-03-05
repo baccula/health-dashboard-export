@@ -80,7 +80,7 @@ struct UploadResponse: Codable {
     }
     
     var workouts: UploadStats {
-        UploadStats(received: 0, imported: 0, skipped_duplicate: 0, errors: 0)
+        UploadStats(received: 0, imported: inserted, skipped_duplicate: skipped, errors: errors.count)
     }
 }
 
