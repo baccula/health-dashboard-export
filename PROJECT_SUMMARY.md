@@ -1,7 +1,6 @@
 # Health Dashboard Export - Project Summary
 
 ## Overview
-
 A native iOS app that uploads Apple HealthKit data to a configured dashboard API. Built with SwiftUI, with pairing, scheduled syncs, and manual export options.
 
 ## Features Implemented
@@ -31,9 +30,7 @@ A native iOS app that uploads Apple HealthKit data to a configured dashboard API
 - Active Energy Burned, Basal Energy Burned
 - Step Count, Distance Walking/Running, Flights Climbed
 - Blood Pressure (Systolic, Diastolic)
-- Blood Glucose
-- Oxygen Saturation
-- Respiratory Rate
+- Blood Glucose, Oxygen Saturation, Respiratory Rate
 
 ### Category Types
 - Sleep Analysis
@@ -59,38 +56,34 @@ A native iOS app that uploads Apple HealthKit data to a configured dashboard API
 - Background Modes (fetch, processing)
 
 ## Files & Structure
-
 ```
 Health Dashboard Export/
 ├── Models/
-│   ├── APIModels.swift
-│   ├── HealthRecord.swift
-│   └── SyncSchedule.swift
+│ ├── APIModels.swift
+│ ├── HealthRecord.swift
+│ └── SyncSchedule.swift
 ├── Services/
-│   ├── APIClient.swift
-│   ├── HealthExporter.swift
-│   ├── KeychainHelper.swift
-│   └── ScheduleManager.swift
+│ ├── APIClient.swift
+│ ├── HealthExporter.swift
+│ ├── KeychainHelper.swift
+│ └── ScheduleManager.swift
 ├── Views/
-│   ├── ContentView.swift
-│   ├── SettingsView.swift
-│   ├── OnboardingView.swift
-│   ├── ScheduleManagerView.swift
-│   └── ScheduleEditorView.swift
+│ ├── ContentView.swift
+│ ├── SettingsView.swift
+│ ├── OnboardingView.swift
+│ ├── ScheduleManagerView.swift
+│ └── ScheduleEditorView.swift
 └── Documentation/
-    ├── SETUP.md
-    ├── QUICK_START.md
-    └── SCHEDULING_GUIDE.md
-```
+ ├── SETUP.md
+ ├── QUICK_START.md
+ └── SCHEDULING_GUIDE.md
 
 ## Known Limitations
-
 - Background sync timing is controlled by iOS
 - HealthKit data is inaccessible while the device is locked
 - Requires network access for uploads
 
 ## Status
-
 - App compiles and runs
 - Pairing and sync flows implemented
 - Background syncs require device testing
